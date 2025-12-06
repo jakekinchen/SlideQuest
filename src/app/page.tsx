@@ -1,8 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useRealtimeAPI, SlideData } from "@/hooks/useRealtimeAPI";
-import { useFeedback } from "@/hooks/useFeedback";
+import { useState, useEffect, useRef } from "react";
+import { useRealtimeAPI, SlideData, PresentationMode, SlideOptions } from "@/hooks/useRealtimeAPI";
 
 // Background color mapping
 const bgColors: Record<string, string> = {
@@ -130,20 +129,23 @@ function SlideCanvas({ slide, isFullscreen = false }: { slide: SlideData | null;
   );
 }
 
-// Next slide preview
-function NextSlidePreview({
+// Slide option preview (compact version for 2-option display)
+function SlideOptionPreview({
   slide,
   onAccept,
   onSkip,
+  label,
 }: {
   slide: SlideData;
-  onAccept: () => void;
-  onSkip: () => void;
+  onAccept: (slide: SlideData) => void;
+  onSkip: (slide: SlideData) => void;
+  label: string;
 }) {
   if (slide.imageUrl) {
     return (
-      <div className="flex flex-col gap-3">
-        <div className="aspect-video overflow-hidden rounded-xl border border-zinc-700 bg-black">
+      <div className="flex flex-col gap-2">
+        <div className="text-xs font-medium text-zinc-500">{label}</div>
+        <div className="aspect-video overflow-hidden rounded-lg border border-zinc-700 bg-black">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={slide.imageUrl}
@@ -151,16 +153,16 @@ function NextSlidePreview({
             className="h-full w-full object-contain"
           />
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-1">
           <button
-            onClick={onAccept}
-            className="flex-1 rounded-lg bg-white px-4 py-2 text-sm font-medium text-zinc-900 transition-colors hover:bg-zinc-200"
+            onClick={() => onAccept(slide)}
+            className="flex-1 rounded-md bg-white px-2 py-1.5 text-xs font-medium text-zinc-900 transition-colors hover:bg-zinc-200"
           >
-            Use This Slide
+            Use
           </button>
           <button
-            onClick={onSkip}
-            className="rounded-lg border border-zinc-700 px-4 py-2 text-sm font-medium text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-white"
+            onClick={() => onSkip(slide)}
+            className="rounded-md border border-zinc-700 px-2 py-1.5 text-xs font-medium text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-white"
           >
             Skip
           </button>
@@ -215,32 +217,33 @@ function NextSlidePreview({
   const isLight = isLightColor(slide.backgroundColor || "zinc");
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-2">
+      <div className="text-xs font-medium text-zinc-500">{label}</div>
       <div
-        className={`aspect-video overflow-hidden rounded-xl border border-zinc-700 ${bgClass}`}
+        className={`aspect-video overflow-hidden rounded-lg border border-zinc-700 ${bgClass}`}
         style={bgStyle}
       >
-        <div className="flex h-full flex-col items-center justify-center p-6 text-center">
-          <h3 className={`text-lg font-bold leading-tight ${isLight ? "text-zinc-900" : "text-white"}`}>
+        <div className="flex h-full flex-col items-center justify-center p-4 text-center">
+          <h3 className={`text-sm font-bold leading-tight ${isLight ? "text-zinc-900" : "text-white"}`}>
             {slide.headline}
           </h3>
           {slide.subheadline && (
-            <p className={`mt-2 text-sm ${isLight ? "text-zinc-600" : "text-zinc-400"}`}>
+            <p className={`mt-1 text-xs ${isLight ? "text-zinc-600" : "text-zinc-400"}`}>
               {slide.subheadline}
             </p>
           )}
         </div>
       </div>
-      <div className="flex gap-2">
+      <div className="flex gap-1">
         <button
-          onClick={onAccept}
-          className="flex-1 rounded-lg bg-white px-4 py-2 text-sm font-medium text-zinc-900 transition-colors hover:bg-zinc-200"
+          onClick={() => onAccept(slide)}
+          className="flex-1 rounded-md bg-white px-2 py-1.5 text-xs font-medium text-zinc-900 transition-colors hover:bg-zinc-200"
         >
-          Use This Slide
+          Use
         </button>
         <button
-          onClick={onSkip}
-          className="rounded-lg border border-zinc-700 px-4 py-2 text-sm font-medium text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-white"
+          onClick={() => onSkip(slide)}
+          className="rounded-md border border-zinc-700 px-2 py-1.5 text-xs font-medium text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-white"
         >
           Skip
         </button>
@@ -287,14 +290,30 @@ function PresenterView({ onExit }: { onExit: () => void }) {
     isConnected,
     isRecording,
     isProcessing,
-    pendingSlides,
+    slideOptions,
+    autoAcceptedSlide,
+    uploadedSlides,
+    isUploadingSlides,
     error,
     transcript,
+    fullTranscript,
+    gateStatus,
+    curatorStatus,
+    mode,
+    setMode,
     start,
     stop,
     removeSlide,
     processFeedback,
+    removeSlideOption,
+    clearAutoAcceptedSlide,
+    recordAcceptedSlide,
+    uploadSlides,
+    useUploadedSlide,
+    removeUploadedSlide,
   } = useRealtimeAPI();
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [slideNav, setSlideNav] = useState<{
     history: SlideData[];
@@ -389,7 +408,21 @@ function PresenterView({ onExit }: { onExit: () => void }) {
     }
   }, [currentSlide, presentationWindow, sessionId]);
 
-  // Keyboard navigation for previous slide
+  // Auto-accept slides in stream mode
+  useEffect(() => {
+    if (autoAcceptedSlide) {
+      setSlideNav((prev) => {
+        const baseHistory =
+          prev.index >= 0 ? prev.history.slice(0, prev.index + 1) : [];
+        const history = [...baseHistory, autoAcceptedSlide];
+        return { history, index: history.length - 1 };
+      });
+      recordAcceptedSlide(autoAcceptedSlide);
+      clearAutoAcceptedSlide();
+    }
+  }, [autoAcceptedSlide, clearAutoAcceptedSlide, recordAcceptedSlide]);
+
+  // Keyboard navigation for slides
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "ArrowLeft") {
@@ -397,6 +430,12 @@ function PresenterView({ onExit }: { onExit: () => void }) {
         setSlideNav((prev) => {
           if (prev.index <= 0) return prev;
           return { ...prev, index: prev.index - 1 };
+        });
+      } else if (event.key === "ArrowRight") {
+        event.preventDefault();
+        setSlideNav((prev) => {
+          if (prev.index >= prev.history.length - 1) return prev;
+          return { ...prev, index: prev.index + 1 };
         });
       }
     };
@@ -413,12 +452,37 @@ function PresenterView({ onExit }: { onExit: () => void }) {
       const history = [...baseHistory, slide];
       return { history, index: history.length - 1 };
     });
-    removeSlide(slide.id);
+    recordAcceptedSlide(slide);
+    removeSlideOption(slide.id);
   };
 
-  // Skip current pending slide
-  const skipSlide = (slideId: string) => {
-    removeSlide(slideId);
+  // Skip a slide option
+  const skipSlide = (slide: SlideData) => {
+    removeSlideOption(slide.id);
+  };
+
+  // Handle file upload
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (files && files.length > 0) {
+      uploadSlides(Array.from(files));
+    }
+    // Reset input so same file can be selected again
+    event.target.value = "";
+  };
+
+  // Accept an uploaded slide
+  const acceptUploadedSlide = (slideId: string) => {
+    const slide = useUploadedSlide(slideId);
+    if (slide) {
+      setSlideNav((prev) => {
+        const baseHistory =
+          prev.index >= 0 ? prev.history.slice(0, prev.index + 1) : [];
+        const history = [...baseHistory, slide];
+        return { history, index: history.length - 1 };
+      });
+      recordAcceptedSlide(slide);
+    }
   };
 
   const handleExit = () => {
@@ -497,6 +561,38 @@ function PresenterView({ onExit }: { onExit: () => void }) {
           <div className="flex items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-900/50 px-4 py-2">
             <span className="text-sm text-zinc-500">Share with audience:</span>
             <code className="flex-1 text-sm text-zinc-300">{audienceUrl}</code>
+        <div className="flex items-center gap-3">
+          {/* Mode Toggle */}
+          <div className="flex items-center gap-2 rounded-lg border border-zinc-700 p-1">
+            <button
+              onClick={() => setMode("gated")}
+              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                mode === "gated"
+                  ? "bg-zinc-700 text-white"
+                  : "text-zinc-400 hover:text-white"
+              }`}
+            >
+              Gated
+            </button>
+            <button
+              onClick={() => setMode("stream-of-consciousness")}
+              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                mode === "stream-of-consciousness"
+                  ? "bg-zinc-700 text-white"
+                  : "text-zinc-400 hover:text-white"
+              }`}
+            >
+              Stream
+            </button>
+          </div>
+
+          <button
+            onClick={openPresentationWindow}
+            className="rounded-lg border border-zinc-700 px-4 py-2 text-sm font-medium text-zinc-300 transition-colors hover:bg-zinc-800"
+          >
+            Open Presentation Window
+          </button>
+          {!isRecording && !isConnected && (
             <button
               onClick={copyAudienceUrl}
               className="rounded bg-zinc-700 px-3 py-1 text-xs font-medium text-zinc-300 transition-colors hover:bg-zinc-600"
@@ -551,8 +647,169 @@ function PresenterView({ onExit }: { onExit: () => void }) {
                   <p className="text-sm">Start recording to capture slides</p>
                 )}
               </div>
+          {/* Upload slides button */}
+          <div className="mt-3 flex items-center gap-3">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*,.pdf"
+              multiple
+              onChange={handleFileUpload}
+              className="hidden"
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isUploadingSlides}
+              className="flex items-center gap-2 rounded-lg border border-zinc-700 px-4 py-2 text-sm font-medium text-zinc-300 transition-colors hover:bg-zinc-800 disabled:opacity-50"
+            >
+              <UploadIcon className="h-4 w-4" />
+              {isUploadingSlides ? "Processing..." : "Upload Slides"}
+            </button>
+            {uploadedSlides.length > 0 && (
+              <span className="text-sm text-zinc-500">
+                {uploadedSlides.length} slide{uploadedSlides.length !== 1 ? "s" : ""} in queue
+              </span>
             )}
           </div>
+        </div>
+
+        {/* Right side: slide options + transcript */}
+        <div className="flex w-96 flex-col gap-4">
+          {/* Slide options - only in gated mode */}
+          {mode === "gated" ? (
+            <>
+              {/* Slide options header */}
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-zinc-500">SLIDE OPTIONS</span>
+                {curatorStatus && (
+                  <span className="text-xs text-purple-400">{curatorStatus}</span>
+                )}
+              </div>
+
+              {/* Two slide options */}
+              <div className="grid grid-cols-2 gap-3">
+                {slideOptions[0] ? (
+                  <SlideOptionPreview
+                    slide={slideOptions[0]}
+                    onAccept={acceptSlide}
+                    onSkip={skipSlide}
+                    label="Option 1"
+                  />
+                ) : (
+                  <div className="flex flex-col gap-2">
+                    <div className="text-xs font-medium text-zinc-500">Option 1</div>
+                    <div className="flex aspect-video items-center justify-center rounded-lg border border-dashed border-zinc-800 text-zinc-600">
+                      <p className="text-xs text-center px-2">
+                        {isProcessing ? "Generating..." : isRecording ? "Listening..." : "Empty"}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {slideOptions[1] ? (
+                  <SlideOptionPreview
+                    slide={slideOptions[1]}
+                    onAccept={acceptSlide}
+                    onSkip={skipSlide}
+                    label="Option 2"
+                  />
+                ) : (
+                  <div className="flex flex-col gap-2">
+                    <div className="text-xs font-medium text-zinc-500">Option 2</div>
+                    <div className="flex aspect-video items-center justify-center rounded-lg border border-dashed border-zinc-800 text-zinc-600">
+                      <p className="text-xs text-center px-2">
+                        {isProcessing ? "Generating..." : isRecording ? "Listening..." : "Empty"}
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </>
+          ) : (
+            /* Stream mode - show status instead of options */
+            <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4">
+              <div className="text-sm font-medium text-zinc-500 mb-2">STREAM MODE</div>
+              <div className="flex items-center gap-2">
+                {isProcessing ? (
+                  <>
+                    <span className="h-2 w-2 animate-pulse rounded-full bg-blue-500" />
+                    <span className="text-sm text-blue-400">Generating slide...</span>
+                  </>
+                ) : isRecording ? (
+                  <>
+                    <span className="h-2 w-2 animate-pulse rounded-full bg-green-500" />
+                    <span className="text-sm text-green-400">Listening...</span>
+                  </>
+                ) : (
+                  <span className="text-sm text-zinc-600">Slides auto-display as you speak</span>
+                )}
+              </div>
+              <p className="mt-2 text-xs text-zinc-600">
+                {slideNav.history.length} slide{slideNav.history.length !== 1 ? "s" : ""} generated
+              </p>
+            </div>
+          )}
+
+          {/* Uploaded slides queue */}
+          {uploadedSlides.length > 0 && (
+            <div className="rounded-xl border border-amber-700/50 bg-amber-900/20">
+              <div className="flex items-center justify-between border-b border-amber-700/30 px-4 py-2">
+                <span className="text-xs font-medium uppercase tracking-wider text-amber-500">
+                  Uploaded Slides
+                </span>
+                <span className="text-xs text-amber-600">
+                  {uploadedSlides.length} ready
+                </span>
+              </div>
+              <div className="max-h-48 overflow-y-auto p-2">
+                <div className="space-y-2">
+                  {uploadedSlides.map((slide, index) => (
+                    <div
+                      key={slide.id}
+                      className="flex items-center gap-2 rounded-lg border border-amber-700/30 bg-zinc-900/50 p-2"
+                    >
+                      <div className="h-12 w-20 flex-shrink-0 overflow-hidden rounded border border-zinc-700 bg-black">
+                        {slide.imageUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={slide.imageUrl}
+                            alt={`Slide ${index + 1}`}
+                            className="h-full w-full object-contain"
+                          />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center text-xs text-zinc-600">
+                            {index + 1}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="truncate text-xs font-medium text-zinc-300">
+                          {slide.headline || `Slide ${index + 1}`}
+                        </p>
+                        <p className="truncate text-xs text-zinc-500">
+                          {slide.originalIdea?.category || "concept"}
+                        </p>
+                      </div>
+                      <div className="flex gap-1">
+                        <button
+                          onClick={() => acceptUploadedSlide(slide.id)}
+                          className="rounded bg-amber-600 px-2 py-1 text-xs font-medium text-white transition-colors hover:bg-amber-500"
+                        >
+                          Use
+                        </button>
+                        <button
+                          onClick={() => removeUploadedSlide(slide.id)}
+                          className="rounded border border-zinc-700 px-2 py-1 text-xs text-zinc-400 transition-colors hover:bg-zinc-800"
+                        >
+                          Skip
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Next Question Slide */}
           <div>
@@ -576,19 +833,39 @@ function PresenterView({ onExit }: { onExit: () => void }) {
           </div>
 
           {/* Live transcript */}
-          <div className="overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900/50">
-            <div className="border-b border-zinc-800 px-4 py-2">
+          <div className="flex-1 overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900/50">
+            <div className="flex items-center justify-between border-b border-zinc-800 px-4 py-2">
               <span className="text-xs font-medium uppercase tracking-wider text-zinc-600">
-                Live Transcript
+                {mode === "gated" ? "Accumulated Transcript" : "Live Transcript"}
               </span>
+              {mode === "gated" && gateStatus && (
+                <span className="text-xs text-blue-400">{gateStatus}</span>
+              )}
             </div>
-            <div className="p-4">
-              {transcript ? (
-                <p className="text-sm text-zinc-400">{transcript}</p>
+            <div className="max-h-48 overflow-y-auto p-4">
+              {mode === "gated" ? (
+                <>
+                  {fullTranscript ? (
+                    <p className="text-sm text-zinc-400">{fullTranscript}</p>
+                  ) : (
+                    <p className="text-sm italic text-zinc-700">
+                      {isRecording ? "Waiting for speech..." : ""}
+                    </p>
+                  )}
+                  {transcript && transcript !== fullTranscript && (
+                    <p className="mt-2 text-sm text-zinc-500 italic">{transcript}</p>
+                  )}
+                </>
               ) : (
-                <p className="text-sm italic text-zinc-700">
-                  {isRecording ? "Waiting for speech..." : ""}
-                </p>
+                <>
+                  {transcript ? (
+                    <p className="text-sm text-zinc-400">{transcript}</p>
+                  ) : (
+                    <p className="text-sm italic text-zinc-700">
+                      {isRecording ? "Waiting for speech..." : ""}
+                    </p>
+                  )}
+                </>
               )}
             </div>
           </div>
@@ -668,6 +945,24 @@ function MicIcon({ className }: { className?: string }) {
         strokeLinecap="round"
         strokeLinejoin="round"
         d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8"
+      />
+    </svg>
+  );
+}
+
+function UploadIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth={2}
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M4 16v1a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3v-1M12 4v12M8 8l4-4 4 4"
       />
     </svg>
   );
