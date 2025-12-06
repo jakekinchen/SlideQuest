@@ -12,6 +12,13 @@ interface SlideContent {
   sourceTranscript: string;
 }
 
+interface StyleReference {
+  headline: string;
+  visualDescription: string;
+  category: string;
+  slideNumber: number;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -23,7 +30,39 @@ export async function POST(request: NextRequest) {
     const category = slideContent?.category || body.category;
     const visualDescription = slideContent?.visualDescription;
 
+    // Style reference from previous slides (first 1-2 slides establish the style)
+    const styleReferences: StyleReference[] = body.styleReferences || [];
+    const slideNumber: number = body.slideNumber || 1;
+
     const model = genAI.getGenerativeModel({ model: "gemini-3-pro-image-preview" });
+
+    // Build styling context from previous slides
+    let styleContext = "";
+    if (styleReferences.length > 0) {
+      styleContext = `
+STYLE CONSISTENCY REQUIREMENTS:
+This is slide #${slideNumber} in an ongoing presentation. You MUST maintain visual consistency with the established slide style.
+
+Previous slides in this presentation:
+${styleReferences.map((ref) => `- Slide ${ref.slideNumber}: "${ref.headline}" (${ref.category}) - ${ref.visualDescription.slice(0, 100)}...`).join("\n")}
+
+CRITICAL STYLE RULES:
+- Use the SAME color palette and visual style as the previous slides
+- Maintain consistent typography treatment (headline size, font weight, positioning)
+- Keep the same layout approach and visual hierarchy
+- Use similar graphic/illustration style (if previous slides used flat icons, continue with flat icons; if they used photography, continue with photography)
+- Match the overall mood and tone established in earlier slides
+- This should look like it belongs to the SAME presentation deck as the previous slides
+`;
+    } else {
+      styleContext = `
+ESTABLISHING PRESENTATION STYLE:
+This is the FIRST slide of a new presentation. Establish a strong, cohesive visual style that can be maintained throughout subsequent slides.
+- Choose a distinctive color palette that will work for multiple slides
+- Establish a consistent typography treatment
+- Set a visual style (modern, corporate, creative, minimal, etc.) that will carry through
+`;
+    }
 
     // Build a richer prompt when we have structured content from the gate
     let prompt: string;
@@ -37,7 +76,7 @@ ${slideContent.bullets?.length ? `KEY POINTS:\n${slideContent.bullets.map((b) =>
 VISUAL DIRECTION: ${visualDescription}
 
 SLIDE TYPE: ${category}
-
+${styleContext}
 Design requirements:
 - Clean, modern presentation aesthetic
 - Clear visual hierarchy with the headline prominent
@@ -51,8 +90,9 @@ Design requirements:
 Title: ${title}
 Content: ${content}
 Category: ${category}
-
-The image should be a professional, modern presentation slide. It should include the title and visual elements that explain the content.`;
+${styleContext}
+The image should be a professional, modern presentation slide. It should include the title and visual elements that explain the content.
+16:9 aspect ratio suitable for presentations.`;
     }
     console.log("Prompt:", prompt);
     const result = await model.generateContent(prompt);

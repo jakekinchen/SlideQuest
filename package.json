@@ -12,7 +12,9 @@
     "@deepgram/sdk": "^4.11.2",
     "@google/generative-ai": "^0.21.0",
     "cross-fetch": "^4.1.0",
+    "libreoffice-file-converter": "^3.3.0",
     "next": "16.0.7",
+    "pdfjs-dist": "^5.4.449",
     "react": "19.2.0",
     "react-dom": "19.2.0"
   },

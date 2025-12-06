@@ -6,8 +6,11 @@ import {
   LiveTranscriptionEvents,
   type LiveTranscriptionEvent,
 } from "@deepgram/sdk";
+import { convertFilesToImages, type ConvertedSlide } from "@/utils/slideConverter";
 
 export type PresentationMode = "gated" | "stream-of-consciousness";
+
+export type ChannelType = "exploratory" | "audience" | "slides";
 
 export interface SlideData {
   id: string;
@@ -24,6 +27,13 @@ export interface SlideData {
   };
   timestamp: string;
   isUploaded?: boolean; // Flag to identify uploaded slides
+  source?: "question" | "exploratory" | "slides"; // Source channel
+}
+
+// Channel state with queue and current index
+export interface ChannelState {
+  queue: SlideData[];
+  currentIndex: number;
 }
 
 // Compact slide history entry for API context
@@ -32,6 +42,14 @@ export interface SlideHistoryEntry {
   headline: string;
   visualDescription: string;
   category: string;
+}
+
+// Style reference for maintaining visual consistency
+export interface StyleReference {
+  headline: string;
+  visualDescription: string;
+  category: string;
+  slideNumber: number;
 }
 
 interface SlideContent {
@@ -45,10 +63,11 @@ interface SlideContent {
 
 export type SlideOptions = [SlideData | null, SlideData | null];
 
+const initialChannelState: ChannelState = { queue: [], currentIndex: 0 };
+
 export function useRealtimeAPI() {
   const [isConnected, setIsConnected] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
-  const [slideOptions, setSlideOptions] = useState<SlideOptions>([null, null]);
   const [error, setError] = useState<string | null>(null);
   const [transcript, setTranscript] = useState<string>("");
   const [fullTranscript, setFullTranscript] = useState<string>("");
@@ -57,8 +76,20 @@ export function useRealtimeAPI() {
   const [gateStatus, setGateStatus] = useState<string>("");
   const [curatorStatus, setCuratorStatus] = useState<string>("");
   const [autoAcceptedSlide, setAutoAcceptedSlide] = useState<SlideData | null>(null);
-  const [uploadedSlides, setUploadedSlides] = useState<SlideData[]>([]);
   const [isUploadingSlides, setIsUploadingSlides] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<string>("");
+
+  // Channel-based slide queues
+  const [exploratoryChannel, setExploratoryChannel] = useState<ChannelState>(initialChannelState);
+  const [audienceChannel, setAudienceChannel] = useState<ChannelState>(initialChannelState);
+  const [slidesChannel, setSlidesChannel] = useState<ChannelState>(initialChannelState);
+
+  // Legacy compatibility - derive slideOptions and uploadedSlides from channels
+  const slideOptions: SlideOptions = [
+    exploratoryChannel.queue[exploratoryChannel.currentIndex] || null,
+    exploratoryChannel.queue[exploratoryChannel.currentIndex + 1] || null,
+  ];
+  const uploadedSlides = slidesChannel.queue;
 
   type DeepgramLiveConnection = ReturnType<
     ReturnType<typeof createClient>["listen"]["live"]
@@ -73,117 +104,156 @@ export function useRealtimeAPI() {
   const isGatingRef = useRef<boolean>(false);
   const modeRef = useRef<PresentationMode>(mode);
   const priorIdeasRef = useRef<{ title: string; content: string; category: string }[]>([]);
-  const slideOptionsRef = useRef<SlideOptions>([null, null]);
   const acceptedSlidesRef = useRef<SlideHistoryEntry[]>([]);
+  const styleReferencesRef = useRef<StyleReference[]>([]);
+  const slideCounterRef = useRef<number>(0);
+  const exploratoryChannelRef = useRef<ChannelState>(initialChannelState);
 
   // Keep refs in sync with state
   modeRef.current = mode;
-  slideOptionsRef.current = slideOptions;
+  exploratoryChannelRef.current = exploratoryChannel;
 
-  // Call curator to decide where to place a new slide
-  const curateSlide = useCallback(
-    async (newSlide: SlideData) => {
-      const currentOptions = slideOptionsRef.current;
+  // Add slide to exploratory channel queue
+  const addToExploratoryChannel = useCallback((newSlide: SlideData) => {
+    const slideWithSource = { ...newSlide, source: "exploratory" as const };
+    setExploratoryChannel((prev) => {
+      // Limit queue to 10 slides max
+      const newQueue = [...prev.queue, slideWithSource].slice(-10);
+      return { ...prev, queue: newQueue };
+    });
+    console.log("Added slide to exploratory channel");
+  }, []);
 
-      // If slots are empty, fill them directly
-      if (!currentOptions[0]) {
-        console.log("📥 Placing slide in empty slot 1");
-        setSlideOptions([newSlide, currentOptions[1]]);
-        return;
+  // Add slide to audience channel queue (for audience questions)
+  const addToAudienceChannel = useCallback((questionText: string, feedbackId: string) => {
+    const questionSlide: SlideData = {
+      id: `audience-${feedbackId}`,
+      headline: questionText,
+      source: "question",
+      originalIdea: {
+        title: "Audience Question",
+        content: questionText,
+        category: "question",
+      },
+      timestamp: new Date().toISOString(),
+    };
+    setAudienceChannel((prev) => ({
+      ...prev,
+      queue: [...prev.queue, questionSlide],
+    }));
+    console.log("Added question to audience channel");
+  }, []);
+
+  // Navigate within a channel (for previewing without selecting)
+  const navigateChannel = useCallback((channel: ChannelType, direction: "prev" | "next") => {
+    const setChannel = channel === "exploratory"
+      ? setExploratoryChannel
+      : channel === "audience"
+        ? setAudienceChannel
+        : setSlidesChannel;
+
+    setChannel((prev) => {
+      const maxIndex = Math.max(0, prev.queue.length - 1);
+      let newIndex = prev.currentIndex;
+      if (direction === "prev") {
+        newIndex = Math.max(0, prev.currentIndex - 1);
+      } else {
+        newIndex = Math.min(maxIndex, prev.currentIndex + 1);
       }
-      if (!currentOptions[1]) {
-        console.log("📥 Placing slide in empty slot 2");
-        setSlideOptions([currentOptions[0], newSlide]);
-        return;
-      }
+      return { ...prev, currentIndex: newIndex };
+    });
+  }, []);
 
-      // Both slots full - ask curator
-      setCuratorStatus("Evaluating...");
-      try {
-        const response = await fetch("/api/slide-curator", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            newSlide: {
-              id: newSlide.id,
-              headline: newSlide.headline,
-              sourceTranscript: newSlide.originalIdea?.content,
-              category: newSlide.originalIdea?.category,
-            },
-            currentOptions: [
-              {
-                id: currentOptions[0].id,
-                headline: currentOptions[0].headline,
-                sourceTranscript: currentOptions[0].originalIdea?.content,
-                category: currentOptions[0].originalIdea?.category,
-              },
-              {
-                id: currentOptions[1].id,
-                headline: currentOptions[1].headline,
-                sourceTranscript: currentOptions[1].originalIdea?.content,
-                category: currentOptions[1].originalIdea?.category,
-              },
-            ],
-          }),
-        });
+  // Get current slide for a channel
+  const getChannelSlide = useCallback((channel: ChannelType): SlideData | null => {
+    const state = channel === "exploratory"
+      ? exploratoryChannel
+      : channel === "audience"
+        ? audienceChannel
+        : slidesChannel;
+    return state.queue[state.currentIndex] || null;
+  }, [exploratoryChannel, audienceChannel, slidesChannel]);
 
-        if (response.ok) {
-          const data = await response.json();
-          console.log("🎭 Curator decision:", data);
+  // Get channel navigation info
+  const getChannelInfo = useCallback((channel: ChannelType) => {
+    const state = channel === "exploratory"
+      ? exploratoryChannel
+      : channel === "audience"
+        ? audienceChannel
+        : slidesChannel;
+    return {
+      total: state.queue.length,
+      currentIndex: state.currentIndex,
+      canGoPrev: state.currentIndex > 0,
+      canGoNext: state.currentIndex < state.queue.length - 1,
+    };
+  }, [exploratoryChannel, audienceChannel, slidesChannel]);
 
-          if (data.action === "replace_slot_1") {
-            setSlideOptions([newSlide, currentOptions[1]]);
-            setCuratorStatus("Replaced option 1");
-          } else if (data.action === "replace_slot_2") {
-            setSlideOptions([currentOptions[0], newSlide]);
-            setCuratorStatus("Replaced option 2");
-          } else {
-            setCuratorStatus("Discarded (current options better)");
-          }
-        }
-      } catch (err) {
-        console.error("❌ Curator failed:", err);
-        // Default: replace slot 2 to keep fresh content
-        setSlideOptions([currentOptions[0], newSlide]);
-        setCuratorStatus("Curator error, replaced slot 2");
-      }
+  // Use a slide from a channel (adds to history)
+  const useSlideFromChannel = useCallback((channel: ChannelType): SlideData | null => {
+    const setChannel = channel === "exploratory"
+      ? setExploratoryChannel
+      : channel === "audience"
+        ? setAudienceChannel
+        : setSlidesChannel;
 
-      // Clear status after a moment
-      setTimeout(() => setCuratorStatus(""), 2000);
-    },
-    []
-  );
+    const state = channel === "exploratory"
+      ? exploratoryChannel
+      : channel === "audience"
+        ? audienceChannel
+        : slidesChannel;
+
+    const slide = state.queue[state.currentIndex];
+    if (!slide) return null;
+
+    // Remove used slide from queue
+    setChannel((prev) => {
+      const newQueue = prev.queue.filter((_, i) => i !== prev.currentIndex);
+      const newIndex = Math.min(prev.currentIndex, Math.max(0, newQueue.length - 1));
+      return { queue: newQueue, currentIndex: newIndex };
+    });
+
+    return slide;
+  }, [exploratoryChannel, audienceChannel, slidesChannel]);
 
   // Generate slide image from structured content (used in gated mode)
   const generateSlideImage = useCallback(
     async (slideContent: SlideContent) => {
-      console.log("🎨 Generating slide image:", slideContent);
+      console.log("Generating slide image:", slideContent);
       setIsProcessing(true);
+
+      // Increment slide counter for this new slide
+      slideCounterRef.current += 1;
+      const currentSlideNumber = slideCounterRef.current;
 
       try {
         const response = await fetch("/api/gemini", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ slideContent }),
+          body: JSON.stringify({
+            slideContent,
+            styleReferences: styleReferencesRef.current,
+            slideNumber: currentSlideNumber,
+          }),
         });
 
         if (response.ok) {
           const data = await response.json();
-          console.log("✅ Slide generated:", data);
+          console.log("Slide generated:", data);
           if (data.slide) {
-            // Use curator to decide placement
-            await curateSlide(data.slide);
+            // Add to exploratory channel queue
+            addToExploratoryChannel(data.slide);
           }
         } else {
-          console.error("❌ Gemini API error:", await response.text());
+          console.error("Gemini API error:", await response.text());
         }
       } catch (err) {
-        console.error("❌ Failed to generate slide:", err);
+        console.error("Failed to generate slide:", err);
       } finally {
         setIsProcessing(false);
       }
     },
-    [curateSlide]
+    [addToExploratoryChannel]
   );
 
   // Check with the gate if we should create a slide (gated mode)
@@ -248,11 +318,21 @@ export function useRealtimeAPI() {
       console.log("🎯 Processing idea (stream mode):", { title, content, category });
       setIsProcessing(true);
 
+      // Increment slide counter for this new slide
+      slideCounterRef.current += 1;
+      const currentSlideNumber = slideCounterRef.current;
+
       try {
         const response = await fetch("/api/gemini", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title, content, category }),
+          body: JSON.stringify({
+            title,
+            content,
+            category,
+            styleReferences: styleReferencesRef.current,
+            slideNumber: currentSlideNumber,
+          }),
         });
 
         if (response.ok) {
@@ -274,50 +354,70 @@ export function useRealtimeAPI() {
     []
   );
 
-  // Remove a slide from options (when accepted or skipped)
+  // Remove a slide from exploratory channel (legacy compatibility)
   const removeSlideOption = useCallback((id: string) => {
-    setSlideOptions((prev) => {
-      if (prev[0]?.id === id) return [prev[1], null];
-      if (prev[1]?.id === id) return [prev[0], null];
-      return prev;
-    });
+    setExploratoryChannel((prev) => ({
+      ...prev,
+      queue: prev.queue.filter((s) => s.id !== id),
+      currentIndex: Math.min(prev.currentIndex, Math.max(0, prev.queue.length - 2)),
+    }));
   }, []);
 
   // Record an accepted slide for context in future gate calls
   const recordAcceptedSlide = useCallback((slide: SlideData) => {
-    acceptedSlidesRef.current.push({
+    const slideEntry = {
       id: slide.id,
       headline: slide.headline || slide.originalIdea?.title || "Untitled",
       visualDescription: slide.visualDescription || slide.originalIdea?.content || "",
       category: slide.originalIdea?.category || "concept",
-    });
+    };
+
+    acceptedSlidesRef.current.push(slideEntry);
+
+    // Keep first 2 slides as style references for consistency
+    // These establish the visual style that subsequent slides should follow
+    if (styleReferencesRef.current.length < 2) {
+      styleReferencesRef.current.push({
+        headline: slideEntry.headline,
+        visualDescription: slideEntry.visualDescription,
+        category: slideEntry.category,
+        slideNumber: acceptedSlidesRef.current.length,
+      });
+      console.log("🎨 Added style reference slide:", styleReferencesRef.current.length);
+    }
+
     console.log("📚 Recorded accepted slide:", acceptedSlidesRef.current.length, "slides in history");
   }, []);
 
-  // Upload and extract slides from images
+  // Upload and extract slides from files (images, PDFs, PowerPoint, Keynote)
   const uploadSlides = useCallback(async (files: File[]) => {
     if (files.length === 0) return;
 
     setIsUploadingSlides(true);
-    console.log("📤 Uploading", files.length, "slide(s)");
+    setUploadProgress("Converting files...");
+    console.log("📤 Uploading", files.length, "file(s)");
 
     try {
-      // Convert files to data URLs
-      const images = await Promise.all(
-        files.map(async (file) => {
-          return new Promise<{ dataUrl: string; fileName: string }>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => {
-              resolve({
-                dataUrl: reader.result as string,
-                fileName: file.name,
-              });
-            };
-            reader.onerror = reject;
-            reader.readAsDataURL(file);
-          });
-        })
+      // Convert all files to images (handles PDFs, PPTX, etc.)
+      const convertedSlides = await convertFilesToImages(
+        files,
+        (message, current, total) => {
+          setUploadProgress(`${message} (${current}/${total})`);
+        }
       );
+
+      if (convertedSlides.length === 0) {
+        setUploadProgress("No slides extracted");
+        return;
+      }
+
+      setUploadProgress(`Extracting content from ${convertedSlides.length} slide(s)...`);
+
+      // Send converted images to extraction API
+      const images = convertedSlides.map((slide) => ({
+        dataUrl: slide.dataUrl,
+        fileName: slide.fileName,
+      }));
 
       const response = await fetch("/api/extract-slides", {
         method: "POST",
@@ -327,44 +427,67 @@ export function useRealtimeAPI() {
 
       if (response.ok) {
         const data = await response.json();
-        console.log("✅ Extracted", data.count, "slides");
+        console.log("Extracted", data.count, "slides");
         if (data.slides && data.slides.length > 0) {
-          setUploadedSlides((prev) => [...prev, ...data.slides]);
+          // Add uploaded slides to the slides channel with source marker
+          const slidesWithSource = data.slides.map((s: SlideData) => ({
+            ...s,
+            source: "slides" as const,
+          }));
+          setSlidesChannel((prev) => ({
+            ...prev,
+            queue: [...prev.queue, ...slidesWithSource],
+          }));
+          setUploadProgress("");
         }
       } else {
-        console.error("❌ Failed to extract slides:", await response.text());
+        const errorData = await response.json().catch(() => ({ error: "Unknown error" }));
+        console.error("❌ Failed to extract slides:", errorData);
+        setUploadProgress(errorData.suggestion || errorData.error || "Failed to extract slides");
       }
     } catch (err) {
       console.error("❌ Upload failed:", err);
+      const message = err instanceof Error ? err.message : "Upload failed";
+      setUploadProgress(message);
     } finally {
       setIsUploadingSlides(false);
+      // Clear progress after a delay if successful
+      setTimeout(() => setUploadProgress(""), 3000);
     }
   }, []);
 
   // Use an uploaded slide (move to first position in queue)
   const useUploadedSlide = useCallback((slideId: string): SlideData | null => {
-    const slide = uploadedSlides.find((s) => s.id === slideId);
+    const slide = slidesChannel.queue.find((s) => s.id === slideId);
     if (slide) {
-      // Remove from uploaded slides queue
-      setUploadedSlides((prev) => prev.filter((s) => s.id !== slideId));
+      // Remove from slides channel queue
+      setSlidesChannel((prev) => ({
+        ...prev,
+        queue: prev.queue.filter((s) => s.id !== slideId),
+        currentIndex: Math.min(prev.currentIndex, Math.max(0, prev.queue.length - 2)),
+      }));
       return slide;
     }
     return null;
-  }, [uploadedSlides]);
+  }, [slidesChannel.queue]);
 
   // Get next uploaded slide (peek at first in queue)
   const getNextUploadedSlide = useCallback((): SlideData | null => {
-    return uploadedSlides.length > 0 ? uploadedSlides[0] : null;
-  }, [uploadedSlides]);
+    return slidesChannel.queue.length > 0 ? slidesChannel.queue[0] : null;
+  }, [slidesChannel.queue]);
 
   // Remove an uploaded slide without using it
   const removeUploadedSlide = useCallback((slideId: string) => {
-    setUploadedSlides((prev) => prev.filter((s) => s.id !== slideId));
+    setSlidesChannel((prev) => ({
+      ...prev,
+      queue: prev.queue.filter((s) => s.id !== slideId),
+      currentIndex: Math.min(prev.currentIndex, Math.max(0, prev.queue.length - 2)),
+    }));
   }, []);
 
   // Clear all uploaded slides
   const clearUploadedSlides = useCallback(() => {
-    setUploadedSlides([]);
+    setSlidesChannel({ queue: [], currentIndex: 0 });
   }, []);
 
   const start = useCallback(async () => {
@@ -502,16 +625,20 @@ export function useRealtimeAPI() {
     setFullTranscript("");
     setGateStatus("");
     setCuratorStatus("");
-    setSlideOptions([null, null]);
-    setUploadedSlides([]);
+    // Reset all channels
+    setExploratoryChannel(initialChannelState);
+    setAudienceChannel(initialChannelState);
+    setSlidesChannel(initialChannelState);
     fullTranscriptRef.current = "";
     lastGateCheckRef.current = "";
     priorIdeasRef.current = [];
     acceptedSlidesRef.current = [];
+    styleReferencesRef.current = [];
+    slideCounterRef.current = 0;
   }, []);
 
   const clearSlideOptions = useCallback(() => {
-    setSlideOptions([null, null]);
+    setExploratoryChannel(initialChannelState);
   }, []);
 
   const clearAutoAcceptedSlide = useCallback(() => {
@@ -526,6 +653,7 @@ export function useRealtimeAPI() {
     autoAcceptedSlide,
     uploadedSlides,
     isUploadingSlides,
+    uploadProgress,
     error,
     transcript,
     fullTranscript,
@@ -544,5 +672,14 @@ export function useRealtimeAPI() {
     getNextUploadedSlide,
     removeUploadedSlide,
     clearUploadedSlides,
+    // Channel-based API
+    exploratoryChannel,
+    audienceChannel,
+    slidesChannel,
+    navigateChannel,
+    getChannelSlide,
+    getChannelInfo,
+    useSlideFromChannel,
+    addToAudienceChannel,
   };
 }
