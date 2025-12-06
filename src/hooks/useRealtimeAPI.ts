@@ -202,28 +202,23 @@ export function useRealtimeAPI() {
       setIsProcessing(true);
 
       try {
-        // Generate a Q&A slide: Question (bold) + AI-generated answer
-        const response = await fetch("/api/gemini", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            title: questionText,
-            content: `Generate a clear, concise answer to this question: ${questionText}`,
+        // Create a consistent template slide for audience questions
+        const questionSlide: SlideData = {
+          id: crypto.randomUUID(),
+          headline: questionText,
+          subheadline: "Audience Question",
+          backgroundColor: "#2563eb", // Blue background for audience questions
+          originalIdea: {
+            title: "Audience Question",
+            content: questionText,
             category: "question",
-          }),
-        });
+          },
+          timestamp: new Date().toISOString(),
+          source: "question" as const,
+        };
 
-        if (response.ok) {
-          const data = await response.json();
-          console.log("✅ Gemini Q&A response:", data);
-          if (data.slide) {
-            // Mark slide as question-generated
-            const slideWithSource = { ...data.slide, source: "question" as const };
-            setPendingSlides((prev) => [...prev, slideWithSource]);
-          }
-        } else {
-          console.error("❌ Gemini API error:", await response.text());
-        }
+        console.log("✅ Created question slide template:", questionSlide);
+        setPendingSlides((prev) => [...prev, questionSlide]);
       } catch (err) {
         console.error("❌ Failed to generate Q&A slide:", err);
       } finally {

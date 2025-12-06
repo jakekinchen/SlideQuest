@@ -71,6 +71,32 @@ function SlideCanvas({ slide, isFullscreen = false }: { slide: SlideData | null;
     );
   }
 
+  // Special template for audience question slides
+  if (slide.source === "question") {
+    return (
+      <div className={`flex h-full w-full flex-col items-center justify-center p-12 bg-blue-600 ${isFullscreen ? "min-h-screen" : ""}`}>
+        <div className="max-w-5xl w-full">
+          {/* Question Icon and Label */}
+          <div className="mb-8 flex items-center justify-center gap-3">
+            <svg className="h-12 w-12 text-blue-200" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span className="text-2xl font-semibold uppercase tracking-wider text-blue-200">
+              Audience Question
+            </span>
+          </div>
+
+          {/* Question Text */}
+          <div className="rounded-2xl border-4 border-blue-400 bg-white p-12 shadow-2xl">
+            <p className="text-center text-4xl font-bold leading-relaxed text-blue-900">
+              {slide.headline}
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const bgClass = getBgClass(slide.backgroundColor || "zinc");
   const bgStyle = getBgStyle(slide.backgroundColor || "zinc");
   const isLight = isLightColor(slide.backgroundColor || "zinc");
@@ -124,6 +150,47 @@ function NextSlidePreview({
             alt="Slide Preview"
             className="h-full w-full object-contain"
           />
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={onAccept}
+            className="flex-1 rounded-lg bg-white px-4 py-2 text-sm font-medium text-zinc-900 transition-colors hover:bg-zinc-200"
+          >
+            Use This Slide
+          </button>
+          <button
+            onClick={onSkip}
+            className="rounded-lg border border-zinc-700 px-4 py-2 text-sm font-medium text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-white"
+          >
+            Skip
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Special template preview for audience question slides
+  if (slide.source === "question") {
+    return (
+      <div className="flex flex-col gap-3">
+        <div className="aspect-video overflow-hidden rounded-xl border border-zinc-700 bg-blue-600">
+          <div className="flex h-full flex-col items-center justify-center p-4">
+            {/* Question Icon and Label */}
+            <div className="mb-2 flex items-center gap-2">
+              <svg className="h-6 w-6 text-blue-200" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span className="text-xs font-semibold uppercase tracking-wider text-blue-200">
+                Audience Question
+              </span>
+            </div>
+            {/* Question Text */}
+            <div className="rounded-lg border-2 border-blue-400 bg-white px-4 py-3">
+              <p className="text-center text-sm font-bold leading-tight text-blue-900 line-clamp-3">
+                {slide.headline}
+              </p>
+            </div>
+          </div>
         </div>
         <div className="flex gap-2">
           <button
