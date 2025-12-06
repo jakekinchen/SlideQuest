@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { createClient, LiveTranscriptionEvents } from "@deepgram/sdk";
 import { Asset } from "./AssetBank";
+import { Theme } from "./ThemeSelector";
 
 interface Visual {
   id: string;
@@ -31,9 +32,10 @@ const CHECK_INTERVAL_MS = 2000; // Check every 2 seconds for enough content
 
 interface AudioRecorderProps {
   assets?: Asset[];
+  selectedTheme?: Theme | null;
 }
 
-export default function AudioRecorder({ assets = [] }: AudioRecorderProps) {
+export default function AudioRecorder({ assets = [], selectedTheme }: AudioRecorderProps) {
   const [isRecording, setIsRecording] = useState(false);
   const [transcript, setTranscript] = useState("");
   const [interimTranscript, setInterimTranscript] = useState("");
@@ -242,12 +244,21 @@ export default function AudioRecorder({ assets = [] }: AudioRecorderProps) {
         console.log(`[Frontend] Reference images:`, referenceImages.map(r => ({ name: r.name, mimeType: r.mimeType, dataLength: r.imageData?.length })));
       }
       
+      // Get theme images if a theme is selected
+      const themeImages = (selectedTheme as any)?.loadedImages?.map((img: string) => ({
+        imageData: img,
+        mimeType: "image/png",
+      })) || [];
+      
+      console.log(`[Frontend] Theme images: ${themeImages.length}`);
+      
       const imageResponse = await fetch("/api/generate-image", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
           prompt: refineData.refinedPrompt,
           referenceImages: referenceImages.length > 0 ? referenceImages : undefined,
+          themeImages: themeImages.length > 0 ? themeImages : undefined,
         }),
       });
       
@@ -278,7 +289,7 @@ export default function AudioRecorder({ assets = [] }: AudioRecorderProps) {
         prev.map(c => c.id === chunkId ? { ...c, status: "error" as const } : c)
       );
     }
-  }, [assets]);
+  }, [assets, selectedTheme]);
 
   // Generate visual for manual mode
   const generateVisual = async (transcriptSegment: string) => {
@@ -317,12 +328,19 @@ export default function AudioRecorder({ assets = [] }: AudioRecorderProps) {
         name: a.name,
       }));
       
+      // Get theme images if a theme is selected
+      const themeImages = (selectedTheme as any)?.loadedImages?.map((img: string) => ({
+        imageData: img,
+        mimeType: "image/png",
+      })) || [];
+      
       const imageResponse = await fetch("/api/generate-image", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
           prompt: refineData.refinedPrompt,
           referenceImages: referenceImages.length > 0 ? referenceImages : undefined,
+          themeImages: themeImages.length > 0 ? themeImages : undefined,
         }),
       });
 

@@ -129,7 +129,41 @@ export default function AssetBank({ assets, onAssetsChange }: AssetBankProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [editingAsset, setEditingAsset] = useState<string | null>(null);
   const [isLoadingDemo, setIsLoadingDemo] = useState(false);
+  const [analyzingAssets, setAnalyzingAssets] = useState<Set<string>>(new Set());
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Analyze an asset with Gemini vision to generate metadata
+  const analyzeAsset = async (assetId: string, imageData: string, mimeType: string, fileName: string) => {
+    setAnalyzingAssets(prev => new Set(prev).add(assetId));
+    
+    try {
+      const response = await fetch("/api/analyze-asset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageData, mimeType, fileName }),
+      });
+
+      if (response.ok) {
+        const metadata = await response.json();
+        updateAsset(assetId, {
+          name: metadata.name,
+          description: metadata.description,
+          tags: metadata.tags,
+        });
+        console.log(`[AssetBank] Auto-generated metadata for ${assetId}:`, metadata);
+      } else {
+        console.error(`[AssetBank] Failed to analyze asset ${assetId}`);
+      }
+    } catch (error) {
+      console.error(`[AssetBank] Error analyzing asset ${assetId}:`, error);
+    } finally {
+      setAnalyzingAssets(prev => {
+        const next = new Set(prev);
+        next.delete(assetId);
+        return next;
+      });
+    }
+  };
 
   const loadDemoAssets = async () => {
     setIsLoadingDemo(true);
@@ -175,7 +209,7 @@ export default function AssetBank({ assets, onAssetsChange }: AssetBankProps) {
       const asset: Asset = {
         id: `asset-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         name: file.name.replace(/\.[^/.]+$/, ""),
-        description: "",
+        description: "🔄 Analyzing with AI...",
         tags: [],
         imageData: base64,
         mimeType: file.type,
@@ -183,8 +217,14 @@ export default function AssetBank({ assets, onAssetsChange }: AssetBankProps) {
       newAssets.push(asset);
     }
 
+    // Add assets immediately (with placeholder metadata)
     onAssetsChange([...assets, ...newAssets]);
     if (fileInputRef.current) fileInputRef.current.value = "";
+
+    // Then analyze each asset in parallel to generate smart metadata
+    for (const asset of newAssets) {
+      analyzeAsset(asset.id, asset.imageData, asset.mimeType, asset.name);
+    }
   };
 
   const fileToBase64 = (file: File): Promise<string> => {
@@ -200,9 +240,14 @@ export default function AssetBank({ assets, onAssetsChange }: AssetBankProps) {
     });
   };
 
+  // Use a ref to always have latest assets for async operations
+  const assetsRef = useRef(assets);
+  assetsRef.current = assets;
+
   const updateAsset = (id: string, updates: Partial<Asset>) => {
+    // Use ref to get latest assets value (avoids stale closure issue)
     onAssetsChange(
-      assets.map((a) => (a.id === id ? { ...a, ...updates } : a))
+      assetsRef.current.map((a) => (a.id === id ? { ...a, ...updates } : a))
     );
   };
 
@@ -358,11 +403,20 @@ export default function AssetBank({ assets, onAssetsChange }: AssetBankProps) {
                       </>
                     ) : (
                       <>
-                        <p className="text-xs font-medium text-gray-900 dark:text-gray-100 truncate">
-                          {asset.name}
-                        </p>
+                        <div className="flex items-center gap-1">
+                          <p className="text-xs font-medium text-gray-900 dark:text-gray-100 truncate flex-1">
+                            {asset.name}
+                          </p>
+                          {analyzingAssets.has(asset.id) && (
+                            <div className="w-3 h-3 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
+                          )}
+                        </div>
                         {asset.description && (
-                          <p className="text-[10px] text-gray-500 dark:text-gray-400 line-clamp-2">
+                          <p className={`text-[10px] line-clamp-2 ${
+                            asset.description.includes("Analyzing") 
+                              ? "text-purple-500 dark:text-purple-400 italic" 
+                              : "text-gray-500 dark:text-gray-400"
+                          }`}>
                             {asset.description}
                           </p>
                         )}
@@ -382,12 +436,21 @@ export default function AssetBank({ assets, onAssetsChange }: AssetBankProps) {
                             </span>
                           ))}
                         </div>
-                        <button
-                          onClick={() => setEditingAsset(asset.id)}
-                          className="text-[10px] text-purple-600 hover:text-purple-700"
-                        >
-                          Edit details
-                        </button>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => setEditingAsset(asset.id)}
+                            className="text-[10px] text-purple-600 hover:text-purple-700"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => analyzeAsset(asset.id, asset.imageData, asset.mimeType, asset.name)}
+                            disabled={analyzingAssets.has(asset.id)}
+                            className="text-[10px] text-blue-600 hover:text-blue-700 disabled:text-gray-400"
+                          >
+                            {analyzingAssets.has(asset.id) ? "Analyzing..." : "🔄 Re-analyze"}
+                          </button>
+                        </div>
                       </>
                     )}
                   </div>

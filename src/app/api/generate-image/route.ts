@@ -9,9 +9,14 @@ interface ReferenceImage {
   name?: string;
 }
 
+interface ThemeReference {
+  imageData: string; // base64
+  mimeType?: string;
+}
+
 export async function POST(request: NextRequest) {
   try {
-    const { prompt, referenceImages } = await request.json();
+    const { prompt, referenceImages, themeImages } = await request.json();
 
     if (!prompt) {
       return NextResponse.json(
@@ -41,6 +46,32 @@ export async function POST(request: NextRequest) {
       }
       return isSupported;
     });
+    
+    // Handle theme images
+    const themes = themeImages as ThemeReference[] | undefined;
+    const hasTheme = themes && themes.length > 0;
+    
+    console.log(`[Generate Image] Theme images: ${themes?.length || 0}`);
+    
+    // Add theme style instructions first (if any)
+    if (hasTheme) {
+      parts.push({
+        text: `STYLE GUIDE: Match the visual style, typography, colors, and layout patterns from these reference slides:\n\n`,
+      });
+      
+      for (let i = 0; i < themes.length; i++) {
+        const theme = themes[i];
+        parts.push({ text: `Style Reference ${i + 1}:\n` });
+        parts.push({
+          inlineData: {
+            mimeType: theme.mimeType || "image/png",
+            data: theme.imageData,
+          },
+        });
+      }
+      
+      parts.push({ text: `\n--- END STYLE GUIDE ---\n\n` });
+    }
     
     if (filteredRefs && filteredRefs.length > 0) {
       // Log what we're receiving
@@ -78,13 +109,19 @@ Instructions:
       }
       
       parts.push({ 
-        text: `\n\n--- END OF REFERENCE IMAGES ---\n\nNow, generate a professional presentation slide image based on this prompt, incorporating visual elements from the reference images above:\n\n${prompt}` 
+        text: `\n\n--- END OF REFERENCE IMAGES ---\n\nNow, generate a professional presentation slide image based on this prompt, incorporating visual elements from the reference images above${hasTheme ? " while matching the style guide" : ""}:\n\n${prompt}` 
       });
       
-      console.log(`[Generate Image] Built ${parts.length} parts for Gemini`);
+      console.log(`[Generate Image] Built ${parts.length} parts for Gemini (${themes?.length || 0} theme refs, ${filteredRefs.length} asset refs)`);
+    } else if (hasTheme) {
+      // Theme only, no asset references
+      parts.push({ 
+        text: `Generate a professional presentation slide image that matches the style guide above. Create an image based on this prompt:\n\n${prompt}` 
+      });
+      console.log(`[Generate Image] Built ${parts.length} parts for Gemini (theme only)`);
     } else {
       // No reference images (or all filtered out), just the prompt
-      console.log(`[Generate Image] No supported reference images, using prompt only`);
+      console.log(`[Generate Image] No reference images, using prompt only`);
       parts.push({ text: prompt });
     }
 
@@ -102,13 +139,14 @@ Instructions:
       );
     }
 
-    console.log(`[Generate Image] Successfully generated image with ${filteredRefs?.length || 0} references`);
+    console.log(`[Generate Image] Successfully generated image with ${filteredRefs?.length || 0} asset refs, ${themes?.length || 0} theme refs`);
 
     return NextResponse.json({
       imageData: imagePart.inlineData.data,
       mimeType: imagePart.inlineData.mimeType || "image/png",
       timestamp: new Date().toISOString(),
       usedReferences: filteredRefs?.length || 0,
+      usedThemeImages: themes?.length || 0,
     });
   } catch (error) {
     console.error("Error generating image:", error);
