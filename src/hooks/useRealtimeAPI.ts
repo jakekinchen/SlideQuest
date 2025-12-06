@@ -23,6 +23,7 @@ export interface SlideData {
     category: string;
   };
   timestamp: string;
+  isUploaded?: boolean; // Flag to identify uploaded slides
 }
 
 // Compact slide history entry for API context
@@ -56,6 +57,8 @@ export function useRealtimeAPI() {
   const [gateStatus, setGateStatus] = useState<string>("");
   const [curatorStatus, setCuratorStatus] = useState<string>("");
   const [autoAcceptedSlide, setAutoAcceptedSlide] = useState<SlideData | null>(null);
+  const [uploadedSlides, setUploadedSlides] = useState<SlideData[]>([]);
+  const [isUploadingSlides, setIsUploadingSlides] = useState(false);
 
   type DeepgramLiveConnection = ReturnType<
     ReturnType<typeof createClient>["listen"]["live"]
@@ -291,6 +294,79 @@ export function useRealtimeAPI() {
     console.log("📚 Recorded accepted slide:", acceptedSlidesRef.current.length, "slides in history");
   }, []);
 
+  // Upload and extract slides from images
+  const uploadSlides = useCallback(async (files: File[]) => {
+    if (files.length === 0) return;
+
+    setIsUploadingSlides(true);
+    console.log("📤 Uploading", files.length, "slide(s)");
+
+    try {
+      // Convert files to data URLs
+      const images = await Promise.all(
+        files.map(async (file) => {
+          return new Promise<{ dataUrl: string; fileName: string }>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+              resolve({
+                dataUrl: reader.result as string,
+                fileName: file.name,
+              });
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+          });
+        })
+      );
+
+      const response = await fetch("/api/extract-slides", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ images }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log("✅ Extracted", data.count, "slides");
+        if (data.slides && data.slides.length > 0) {
+          setUploadedSlides((prev) => [...prev, ...data.slides]);
+        }
+      } else {
+        console.error("❌ Failed to extract slides:", await response.text());
+      }
+    } catch (err) {
+      console.error("❌ Upload failed:", err);
+    } finally {
+      setIsUploadingSlides(false);
+    }
+  }, []);
+
+  // Use an uploaded slide (move to first position in queue)
+  const useUploadedSlide = useCallback((slideId: string): SlideData | null => {
+    const slide = uploadedSlides.find((s) => s.id === slideId);
+    if (slide) {
+      // Remove from uploaded slides queue
+      setUploadedSlides((prev) => prev.filter((s) => s.id !== slideId));
+      return slide;
+    }
+    return null;
+  }, [uploadedSlides]);
+
+  // Get next uploaded slide (peek at first in queue)
+  const getNextUploadedSlide = useCallback((): SlideData | null => {
+    return uploadedSlides.length > 0 ? uploadedSlides[0] : null;
+  }, [uploadedSlides]);
+
+  // Remove an uploaded slide without using it
+  const removeUploadedSlide = useCallback((slideId: string) => {
+    setUploadedSlides((prev) => prev.filter((s) => s.id !== slideId));
+  }, []);
+
+  // Clear all uploaded slides
+  const clearUploadedSlides = useCallback(() => {
+    setUploadedSlides([]);
+  }, []);
+
   const start = useCallback(async () => {
     if (connectionRef.current) return;
 
@@ -427,6 +503,7 @@ export function useRealtimeAPI() {
     setGateStatus("");
     setCuratorStatus("");
     setSlideOptions([null, null]);
+    setUploadedSlides([]);
     fullTranscriptRef.current = "";
     lastGateCheckRef.current = "";
     priorIdeasRef.current = [];
@@ -447,6 +524,8 @@ export function useRealtimeAPI() {
     isProcessing,
     slideOptions,
     autoAcceptedSlide,
+    uploadedSlides,
+    isUploadingSlides,
     error,
     transcript,
     fullTranscript,
@@ -460,5 +539,10 @@ export function useRealtimeAPI() {
     clearAutoAcceptedSlide,
     removeSlideOption,
     recordAcceptedSlide,
+    uploadSlides,
+    useUploadedSlide,
+    getNextUploadedSlide,
+    removeUploadedSlide,
+    clearUploadedSlides,
   };
 }

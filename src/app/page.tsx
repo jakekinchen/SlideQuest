@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRealtimeAPI, SlideData, PresentationMode, SlideOptions } from "@/hooks/useRealtimeAPI";
 
 // Background color mapping
@@ -225,6 +225,8 @@ function PresenterView({ onExit }: { onExit: () => void }) {
     isProcessing,
     slideOptions,
     autoAcceptedSlide,
+    uploadedSlides,
+    isUploadingSlides,
     error,
     transcript,
     fullTranscript,
@@ -237,7 +239,12 @@ function PresenterView({ onExit }: { onExit: () => void }) {
     removeSlideOption,
     clearAutoAcceptedSlide,
     recordAcceptedSlide,
+    uploadSlides,
+    useUploadedSlide,
+    removeUploadedSlide,
   } = useRealtimeAPI();
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [slideNav, setSlideNav] = useState<{
     history: SlideData[];
@@ -321,6 +328,30 @@ function PresenterView({ onExit }: { onExit: () => void }) {
   // Skip a slide option
   const skipSlide = (slide: SlideData) => {
     removeSlideOption(slide.id);
+  };
+
+  // Handle file upload
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (files && files.length > 0) {
+      uploadSlides(Array.from(files));
+    }
+    // Reset input so same file can be selected again
+    event.target.value = "";
+  };
+
+  // Accept an uploaded slide
+  const acceptUploadedSlide = (slideId: string) => {
+    const slide = useUploadedSlide(slideId);
+    if (slide) {
+      setSlideNav((prev) => {
+        const baseHistory =
+          prev.index >= 0 ? prev.history.slice(0, prev.index + 1) : [];
+        const history = [...baseHistory, slide];
+        return { history, index: history.length - 1 };
+      });
+      recordAcceptedSlide(slide);
+    }
   };
 
   const handleExit = () => {
@@ -431,6 +462,30 @@ function PresenterView({ onExit }: { onExit: () => void }) {
           <div className="flex-1 overflow-hidden rounded-xl border border-zinc-800">
             <SlideCanvas slide={currentSlide} />
           </div>
+          {/* Upload slides button */}
+          <div className="mt-3 flex items-center gap-3">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*,.pdf"
+              multiple
+              onChange={handleFileUpload}
+              className="hidden"
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isUploadingSlides}
+              className="flex items-center gap-2 rounded-lg border border-zinc-700 px-4 py-2 text-sm font-medium text-zinc-300 transition-colors hover:bg-zinc-800 disabled:opacity-50"
+            >
+              <UploadIcon className="h-4 w-4" />
+              {isUploadingSlides ? "Processing..." : "Upload Slides"}
+            </button>
+            {uploadedSlides.length > 0 && (
+              <span className="text-sm text-zinc-500">
+                {uploadedSlides.length} slide{uploadedSlides.length !== 1 ? "s" : ""} in queue
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Right side: slide options + transcript */}
@@ -510,6 +565,67 @@ function PresenterView({ onExit }: { onExit: () => void }) {
             </div>
           )}
 
+          {/* Uploaded slides queue */}
+          {uploadedSlides.length > 0 && (
+            <div className="rounded-xl border border-amber-700/50 bg-amber-900/20">
+              <div className="flex items-center justify-between border-b border-amber-700/30 px-4 py-2">
+                <span className="text-xs font-medium uppercase tracking-wider text-amber-500">
+                  Uploaded Slides
+                </span>
+                <span className="text-xs text-amber-600">
+                  {uploadedSlides.length} ready
+                </span>
+              </div>
+              <div className="max-h-48 overflow-y-auto p-2">
+                <div className="space-y-2">
+                  {uploadedSlides.map((slide, index) => (
+                    <div
+                      key={slide.id}
+                      className="flex items-center gap-2 rounded-lg border border-amber-700/30 bg-zinc-900/50 p-2"
+                    >
+                      <div className="h-12 w-20 flex-shrink-0 overflow-hidden rounded border border-zinc-700 bg-black">
+                        {slide.imageUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={slide.imageUrl}
+                            alt={`Slide ${index + 1}`}
+                            className="h-full w-full object-contain"
+                          />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center text-xs text-zinc-600">
+                            {index + 1}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="truncate text-xs font-medium text-zinc-300">
+                          {slide.headline || `Slide ${index + 1}`}
+                        </p>
+                        <p className="truncate text-xs text-zinc-500">
+                          {slide.originalIdea?.category || "concept"}
+                        </p>
+                      </div>
+                      <div className="flex gap-1">
+                        <button
+                          onClick={() => acceptUploadedSlide(slide.id)}
+                          className="rounded bg-amber-600 px-2 py-1 text-xs font-medium text-white transition-colors hover:bg-amber-500"
+                        >
+                          Use
+                        </button>
+                        <button
+                          onClick={() => removeUploadedSlide(slide.id)}
+                          className="rounded border border-zinc-700 px-2 py-1 text-xs text-zinc-400 transition-colors hover:bg-zinc-800"
+                        >
+                          Skip
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Live transcript */}
           <div className="flex-1 overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900/50">
             <div className="flex items-center justify-between border-b border-zinc-800 px-4 py-2">
@@ -571,6 +687,24 @@ function MicIcon({ className }: { className?: string }) {
         strokeLinecap="round"
         strokeLinejoin="round"
         d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8"
+      />
+    </svg>
+  );
+}
+
+function UploadIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth={2}
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M4 16v1a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3v-1M12 4v12M8 8l4-4 4 4"
       />
     </svg>
   );
