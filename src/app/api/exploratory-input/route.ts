@@ -1,4 +1,7 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import {
+  DynamicRetrievalMode,
+  GoogleGenerativeAI,
+} from "@google/generative-ai";
 import { NextRequest, NextResponse } from "next/server";
 
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY || "");
@@ -49,6 +52,15 @@ export async function POST(request: NextRequest) {
       generationConfig: {
         responseMimeType: "application/json",
       },
+      tools: [
+        {
+          googleSearchRetrieval: {
+            dynamicRetrievalConfig: {
+              mode: DynamicRetrievalMode.MODE_DYNAMIC,
+            },
+          },
+        },
+      ],
     });
 
     const slideContext = currentSlide
@@ -165,4 +177,3 @@ Limit to at most 2 slides and DO NOT wrap the JSON in markdown.`;
     );
   }
 }
-
