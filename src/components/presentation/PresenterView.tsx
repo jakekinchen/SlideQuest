@@ -12,6 +12,7 @@ interface PresenterViewProps {
   onExit: () => void;
 }
 
+// Suggestions when there are already slides in history
 const EXPLORATORY_SUGGESTIONS: string[] = [
   "Generate a slide that clearly frames the core problem this presentation is solving.",
   "Suggest a deep-dive slide that expands on the key idea from the current slide.",
@@ -19,6 +20,22 @@ const EXPLORATORY_SUGGESTIONS: string[] = [
   "Propose a comparison slide that contrasts the current approach with an alternative.",
   "Design a slide that highlights key risks, tradeoffs, or challenges and how to address them.",
   "Create a forward-looking slide about next steps, roadmap, or long-term impact.",
+];
+
+// Fun starter topics when there's no slide history yet
+const STARTER_TOPICS: string[] = [
+  "The future of human-AI collaboration in creative work",
+  "How quantum computing will change everyday life",
+  "The hidden psychology of viral content",
+  "Why cities of the future will grow food on skyscrapers",
+  "The science of decision-making under uncertainty",
+  "How the attention economy is reshaping culture",
+  "The unexpected origins of the internet",
+  "What ant colonies teach us about distributed systems",
+  "The mathematics behind music and why we love it",
+  "How space exploration technology improves life on Earth",
+  "The neuroscience of creativity and flow states",
+  "Why storytelling is humanity's greatest technology",
 ];
 
 export function PresenterView({ onExit }: PresenterViewProps) {
@@ -81,6 +98,14 @@ export function PresenterView({ onExit }: PresenterViewProps) {
       ? Math.floor(Math.random() * EXPLORATORY_SUGGESTIONS.length)
       : 0
   );
+  const [starterIndex, setStarterIndex] = useState(() =>
+    STARTER_TOPICS.length > 0
+      ? Math.floor(Math.random() * STARTER_TOPICS.length)
+      : 0
+  );
+
+  // Check if we have any slide history
+  const hasSlideHistory = slideNav.history.length > 0;
 
   // Create session on component mount
   useEffect(() => {
@@ -243,12 +268,23 @@ export function PresenterView({ onExit }: PresenterViewProps) {
   };
 
   const cycleExploratorySuggestion = () => {
-    if (EXPLORATORY_SUGGESTIONS.length === 0) return;
-    setSuggestionIndex((prev) => {
-      const next = (prev + 1) % EXPLORATORY_SUGGESTIONS.length;
-      setExploratoryInput(EXPLORATORY_SUGGESTIONS[next]);
-      return next;
-    });
+    if (hasSlideHistory) {
+      // Use context-aware suggestions when we have slides
+      if (EXPLORATORY_SUGGESTIONS.length === 0) return;
+      setSuggestionIndex((prev) => {
+        const next = (prev + 1) % EXPLORATORY_SUGGESTIONS.length;
+        setExploratoryInput(EXPLORATORY_SUGGESTIONS[next]);
+        return next;
+      });
+    } else {
+      // Use fun starter topics when no history
+      if (STARTER_TOPICS.length === 0) return;
+      setStarterIndex((prev) => {
+        const next = (prev + 1) % STARTER_TOPICS.length;
+        setExploratoryInput(STARTER_TOPICS[next]);
+        return next;
+      });
+    }
   };
 
   return (
@@ -439,17 +475,21 @@ export function PresenterView({ onExit }: PresenterViewProps) {
               emptyMessage={
                 isRecording
                   ? "Listening for ideas..."
-                  : "Type an idea to explore"
+                  : hasSlideHistory
+                    ? "Type an idea to explore"
+                    : "Pick a topic to start exploring"
               }
               onEmptyAction={() => {
                 setShowExploratoryInput(true);
-                if (!exploratoryInput && EXPLORATORY_SUGGESTIONS.length > 0) {
-                  setExploratoryInput(
-                    EXPLORATORY_SUGGESTIONS[suggestionIndex]
-                  );
+                if (!exploratoryInput) {
+                  if (hasSlideHistory && EXPLORATORY_SUGGESTIONS.length > 0) {
+                    setExploratoryInput(EXPLORATORY_SUGGESTIONS[suggestionIndex]);
+                  } else if (!hasSlideHistory && STARTER_TOPICS.length > 0) {
+                    setExploratoryInput(STARTER_TOPICS[starterIndex]);
+                  }
                 }
               }}
-              emptyActionLabel="New exploratory idea"
+              emptyActionLabel={hasSlideHistory ? "New exploratory idea" : "Pick a topic to explore"}
             />
 
             {/* Audience Questions Channel */}
@@ -508,24 +548,25 @@ export function PresenterView({ onExit }: PresenterViewProps) {
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-4 sm:items-center">
           <div className="w-full max-w-md rounded-xl border border-zinc-700 bg-zinc-900 p-4 shadow-xl">
             <h2 className="mb-2 text-sm font-semibold text-white">
-              New exploratory idea
+              {hasSlideHistory ? "New exploratory idea" : "Start exploring a topic"}
             </h2>
             <p className="mb-3 text-xs text-zinc-400">
-              Describe the next concept, question, or direction you want a
-              slide for. We&apos;ll consider your current slide, uploaded
-              deck, live transcript, and audience context.
+              {hasSlideHistory
+                ? "Describe the next concept, question, or direction you want a slide for. We'll consider your current slide, uploaded deck, live transcript, and audience context."
+                : "Pick a fascinating topic to dive into, or type your own. We'll generate beautiful slides to kick off your exploration."}
             </p>
             <div className="mb-1 flex items-center justify-between">
               <span className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">
-                Prompt
+                {hasSlideHistory ? "Prompt" : "Topic"}
               </span>
-              {EXPLORATORY_SUGGESTIONS.length > 0 && (
+              {((hasSlideHistory && EXPLORATORY_SUGGESTIONS.length > 0) ||
+                (!hasSlideHistory && STARTER_TOPICS.length > 0)) && (
                 <button
                   type="button"
                   onClick={cycleExploratorySuggestion}
                   className="rounded-md border border-zinc-700 px-2 py-1 text-[11px] font-medium text-zinc-300 transition-colors hover:bg-zinc-800"
                 >
-                  Suggestions
+                  {hasSlideHistory ? "Suggestions" : "More topics"}
                 </button>
               )}
             </div>
@@ -533,7 +574,11 @@ export function PresenterView({ onExit }: PresenterViewProps) {
               value={exploratoryInput}
               onChange={(event) => setExploratoryInput(event.target.value)}
               className="mb-3 h-28 w-full resize-none rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1 text-sm text-zinc-100 outline-none focus:border-zinc-500"
-              placeholder="E.g. A slide that introduces the long-term roadmap and why it matters"
+              placeholder={
+                hasSlideHistory
+                  ? "E.g. A slide that introduces the long-term roadmap and why it matters"
+                  : "E.g. The science behind black holes, or How do vaccines work?"
+              }
             />
             <div className="flex justify-end gap-2">
               <button
