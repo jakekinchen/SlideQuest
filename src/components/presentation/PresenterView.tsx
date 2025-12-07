@@ -28,12 +28,11 @@ export function PresenterView({ onExit }: PresenterViewProps) {
     recordAcceptedSlide,
     uploadSlides,
     // Channel-based API
-    exploratoryChannel,
     slidesChannel,
     navigateChannel,
     getChannelSlide,
     getChannelInfo,
-    useSlideFromChannel,
+    takeSlideFromChannel,
     addToAudienceChannel,
     isAnsweringQuestion,
   } = useRealtimeAPI();
@@ -190,8 +189,8 @@ export function PresenterView({ onExit }: PresenterViewProps) {
   }, []);
 
   // Handle using a slide from a channel
-  const useChannelSlide = (channel: ChannelType) => {
-    const slide = useSlideFromChannel(channel);
+  const handleUseChannelSlide = (channel: ChannelType) => {
+    const slide = takeSlideFromChannel(channel);
     if (slide) {
       setSlideNav((prev) => {
         const baseHistory =
@@ -394,7 +393,7 @@ export function PresenterView({ onExit }: PresenterViewProps) {
               currentSlide={getChannelSlide("exploratory")}
               channelInfo={getChannelInfo("exploratory")}
               onNavigate={(dir) => navigateChannel("exploratory", dir)}
-              onUse={() => useChannelSlide("exploratory")}
+              onUse={() => handleUseChannelSlide("exploratory")}
               isProcessing={isProcessing}
               isRecording={isRecording}
               emptyMessage={isRecording ? "Listening..." : "AI suggestions"}
@@ -409,7 +408,7 @@ export function PresenterView({ onExit }: PresenterViewProps) {
               currentSlide={getChannelSlide("audience")}
               channelInfo={getChannelInfo("audience")}
               onNavigate={(dir) => navigateChannel("audience", dir)}
-              onUse={() => useChannelSlide("audience")}
+              onUse={() => handleUseChannelSlide("audience")}
               isProcessing={isAnsweringQuestion}
               emptyMessage={isAnsweringQuestion ? "Answering question..." : "No questions yet"}
             />
@@ -424,7 +423,7 @@ export function PresenterView({ onExit }: PresenterViewProps) {
                 currentSlide={getChannelSlide("slides")}
                 channelInfo={getChannelInfo("slides")}
                 onNavigate={(dir) => navigateChannel("slides", dir)}
-                onUse={() => useChannelSlide("slides")}
+                onUse={() => handleUseChannelSlide("slides")}
                 emptyMessage="Upload slides"
               />
             ) : (

@@ -67,7 +67,7 @@ export async function GET(
           clearInterval(pollInterval);
           try {
             controller.close();
-          } catch (e) {
+          } catch {
             // Stream already closed
           }
         }
@@ -80,7 +80,7 @@ export async function GET(
         clearInterval(pollInterval);
         try {
           controller.close();
-        } catch (e) {
+        } catch {
           // Stream already closed
         }
       });

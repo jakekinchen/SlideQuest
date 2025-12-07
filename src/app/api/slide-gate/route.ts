@@ -1,4 +1,8 @@
-import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
+import {
+  GoogleGenerativeAI,
+  SchemaType,
+  DynamicRetrievalMode,
+} from "@google/generative-ai";
 import { NextRequest, NextResponse } from "next/server";
 
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY || "");
@@ -85,7 +89,16 @@ export async function POST(request: NextRequest) {
 
     const model = genAI.getGenerativeModel({
       model: "gemini-2.0-flash",
-      tools: [{ functionDeclarations: [createSlideTool] }],
+      tools: [
+        { functionDeclarations: [createSlideTool] },
+        {
+          googleSearchRetrieval: {
+            dynamicRetrievalConfig: {
+              mode: DynamicRetrievalMode.MODE_DYNAMIC,
+            },
+          },
+        },
+      ],
     });
 
     const priorIdeasText = priorIdeas.length > 0
@@ -127,6 +140,8 @@ ${acceptedSlides.map((slide: AcceptedSlide, i: number) => `${i + 1}. ${slide.hea
     }
 
     const prompt = `You are an anticipatory presentation assistant analyzing a live presentation transcript. Your role is to create FORWARD-THINKING slides that help the audience understand where the speaker is heading, not just summarize what was said.
+
+You can selectively use live Google Search to ground your understanding in accurate, up-to-date information, events, and concrete examples related to what the speaker is talking about. Only invoke search when it will clearly add important, specific, and directly relevant facts or examples that make the slide more useful for this particular presentation, not for every slide.
 
 TRANSCRIPT:
 "${transcript}"

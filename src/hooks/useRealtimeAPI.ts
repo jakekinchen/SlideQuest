@@ -6,29 +6,13 @@ import {
   LiveTranscriptionEvents,
   type LiveTranscriptionEvent,
 } from "@deepgram/sdk";
-import { convertFilesToImages, type ConvertedSlide } from "@/utils/slideConverter";
+import { convertFilesToImages } from "@/utils/slideConverter";
+import type { SlideData } from "@/types/slides";
+export type { SlideData } from "@/types/slides";
 
 export type PresentationMode = "gated" | "stream-of-consciousness";
 
 export type ChannelType = "exploratory" | "audience" | "slides";
-
-export interface SlideData {
-  id: string;
-  imageUrl?: string;
-  headline?: string;
-  subheadline?: string;
-  bullets?: string[];
-  backgroundColor?: string;
-  visualDescription?: string;
-  originalIdea: {
-    title: string;
-    content: string;
-    category: string;
-  };
-  timestamp: string;
-  isUploaded?: boolean;
-  source?: "question" | "exploratory" | "slides";
-}
 
 // Channel state with queue and current index
 export interface ChannelState {
@@ -117,9 +101,19 @@ export function useRealtimeAPI() {
   const addToExploratoryChannel = useCallback((newSlide: SlideData) => {
     const slideWithSource = { ...newSlide, source: "exploratory" as const };
     setExploratoryChannel((prev) => {
-      // Limit queue to 10 slides max, new slides at top
+      // Preserve the currently-viewed slide when inserting at top
+      const currentSlide = prev.queue[prev.currentIndex] ?? null;
       const newQueue = [slideWithSource, ...prev.queue].slice(0, 10);
-      return { ...prev, queue: newQueue };
+
+      // Find the new index of the previously-viewed slide
+      const newIndex = currentSlide
+        ? Math.max(0, newQueue.findIndex((s) => s.id === currentSlide.id))
+        : 0;
+
+      return {
+        queue: newQueue,
+        currentIndex: newIndex === -1 ? 0 : newIndex,
+      };
     });
     console.log("Added slide to exploratory channel");
   }, []);
@@ -331,7 +325,7 @@ export function useRealtimeAPI() {
   }, [exploratoryChannel, audienceChannel, slidesChannel]);
 
   // Use a slide from a channel (adds to history)
-  const useSlideFromChannel = useCallback((channel: ChannelType): SlideData | null => {
+  const takeSlideFromChannel = useCallback((channel: ChannelType): SlideData | null => {
     const setChannel = channel === "exploratory"
       ? setExploratoryChannel
       : channel === "audience"
@@ -559,11 +553,20 @@ export function useRealtimeAPI() {
 
   // Remove a slide from exploratory channel (legacy compatibility)
   const removeSlideOption = useCallback((id: string) => {
-    setExploratoryChannel((prev) => ({
-      ...prev,
-      queue: prev.queue.filter((s) => s.id !== id),
-      currentIndex: Math.min(prev.currentIndex, Math.max(0, prev.queue.length - 2)),
-    }));
+    setExploratoryChannel((prev) => {
+      const removedIndex = prev.queue.findIndex((s) => s.id === id);
+      const newQueue = prev.queue.filter((s) => s.id !== id);
+
+      // Adjust currentIndex: if we removed a slide before or at currentIndex, shift down
+      let newIndex = prev.currentIndex;
+      if (removedIndex !== -1 && removedIndex <= prev.currentIndex) {
+        newIndex = Math.max(0, prev.currentIndex - 1);
+      }
+      // Ensure index is within bounds
+      newIndex = Math.min(newIndex, Math.max(0, newQueue.length - 1));
+
+      return { queue: newQueue, currentIndex: newIndex };
+    });
   }, []);
 
   // Record an accepted slide for context in future gate calls
@@ -696,11 +699,19 @@ export function useRealtimeAPI() {
     const slide = slidesChannel.queue.find((s) => s.id === slideId);
     if (slide) {
       // Remove from slides channel queue
-      setSlidesChannel((prev) => ({
-        ...prev,
-        queue: prev.queue.filter((s) => s.id !== slideId),
-        currentIndex: Math.min(prev.currentIndex, Math.max(0, prev.queue.length - 2)),
-      }));
+      setSlidesChannel((prev) => {
+        const removedIndex = prev.queue.findIndex((s) => s.id === slideId);
+        const newQueue = prev.queue.filter((s) => s.id !== slideId);
+
+        // Adjust currentIndex if we removed a slide before or at currentIndex
+        let newIndex = prev.currentIndex;
+        if (removedIndex !== -1 && removedIndex <= prev.currentIndex) {
+          newIndex = Math.max(0, prev.currentIndex - 1);
+        }
+        newIndex = Math.min(newIndex, Math.max(0, newQueue.length - 1));
+
+        return { queue: newQueue, currentIndex: newIndex };
+      });
       return slide;
     }
     return null;
@@ -713,11 +724,19 @@ export function useRealtimeAPI() {
 
   // Remove an uploaded slide without using it
   const removeUploadedSlide = useCallback((slideId: string) => {
-    setSlidesChannel((prev) => ({
-      ...prev,
-      queue: prev.queue.filter((s) => s.id !== slideId),
-      currentIndex: Math.min(prev.currentIndex, Math.max(0, prev.queue.length - 2)),
-    }));
+    setSlidesChannel((prev) => {
+      const removedIndex = prev.queue.findIndex((s) => s.id === slideId);
+      const newQueue = prev.queue.filter((s) => s.id !== slideId);
+
+      // Adjust currentIndex if we removed a slide before or at currentIndex
+      let newIndex = prev.currentIndex;
+      if (removedIndex !== -1 && removedIndex <= prev.currentIndex) {
+        newIndex = Math.max(0, prev.currentIndex - 1);
+      }
+      newIndex = Math.min(newIndex, Math.max(0, newQueue.length - 1));
+
+      return { queue: newQueue, currentIndex: newIndex };
+    });
   }, []);
 
   // Clear all uploaded slides
@@ -728,16 +747,41 @@ export function useRealtimeAPI() {
   const start = useCallback(async () => {
     if (connectionRef.current) return;
 
-    const apiKey = process.env.NEXT_PUBLIC_DEEPGRAM_API_KEY;
+    setError(null);
 
-    if (!apiKey) {
-      setError("Missing NEXT_PUBLIC_DEEPGRAM_API_KEY environment variable");
+    let key: string | undefined;
+
+    try {
+      const response = await fetch("/api/deepgram-key");
+      if (!response.ok) {
+        const errorData = (await response.json().catch(() => null)) as
+          | { error?: string }
+          | null;
+        const message =
+          errorData?.error || "Failed to obtain temporary Deepgram key";
+        setError(message);
+        return;
+      }
+
+      const data = (await response.json()) as { key?: string };
+      if (!data?.key) {
+        setError("Failed to obtain temporary Deepgram key");
+        return;
+      }
+
+      key = data.key;
+    } catch (err) {
+      console.error("Error fetching temporary Deepgram key:", err);
+      setError("Failed to obtain temporary Deepgram key");
       return;
     }
 
-    setError(null);
+    if (!key) {
+      setError("Failed to obtain temporary Deepgram key");
+      return;
+    }
 
-    const deepgram = createClient(apiKey);
+    const deepgram = createClient(key!);
     const connection = deepgram.listen.live({
       model: "nova-3",
       language: "en-US",
@@ -914,7 +958,7 @@ export function useRealtimeAPI() {
     navigateChannel,
     getChannelSlide,
     getChannelInfo,
-    useSlideFromChannel,
+    takeSlideFromChannel,
     addToAudienceChannel,
     isAnsweringQuestion,
   };

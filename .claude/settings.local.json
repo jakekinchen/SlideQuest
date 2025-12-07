@@ -6,7 +6,8 @@
       "Bash(pnpm add:*)",
       "Bash(npm install:*)",
       "mcp__ide__getDiagnostics",
-      "WebSearch"
+      "WebSearch",
+      "WebFetch(domain:ai.google.dev)"
     ],
     "deny": [],
     "ask": []

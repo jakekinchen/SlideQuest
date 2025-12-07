@@ -14,9 +14,6 @@ export function useFeedback(sessionId: string | null) {
 
   useEffect(() => {
     if (!sessionId) {
-      setFeedback([]);
-      setUnreadCount(0);
-      setIsConnected(false);
       return;
     }
 

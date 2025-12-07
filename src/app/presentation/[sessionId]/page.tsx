@@ -3,23 +3,8 @@
 import { useState, useEffect } from "react";
 import { use } from "react";
 import { SlideCanvas } from "@/components/presentation/SlideCanvas";
+import type { SlideData } from "@/hooks/useRealtimeAPI";
 import QRCode from "react-qr-code";
-
-interface SlideData {
-  id: string;
-  imageUrl?: string;
-  headline?: string;
-  subheadline?: string;
-  bullets?: string[];
-  backgroundColor?: string;
-  visualDescription?: string;
-  originalIdea?: {
-    title: string;
-    content: string;
-    category: string;
-  };
-  source?: "voice" | "question" | "exploratory" | "slides";
-}
 
 export default function PresentationPage({
   params,
@@ -149,7 +134,9 @@ export default function PresentationPage({
       <div className="flex min-h-screen items-center justify-center bg-zinc-900">
         <div className="text-center text-zinc-600">
           <h1 className="mb-4 text-4xl font-bold text-red-400">Session Not Found</h1>
-          <p className="text-xl">This presentation session doesn't exist or has expired.</p>
+          <p className="text-xl">
+            This presentation session does not exist or has expired.
+          </p>
           <p className="mt-4 text-sm text-zinc-700">
             Please check the URL or contact the presenter.
           </p>
@@ -175,7 +162,7 @@ export default function PresentationPage({
     }
 
     // Delegate slide rendering (including audience question templating) to SlideCanvas
-    return <SlideCanvas slide={slide as any} isFullscreen />;
+    return <SlideCanvas slide={slide} isFullscreen />;
   };
 
   // Main presentation view

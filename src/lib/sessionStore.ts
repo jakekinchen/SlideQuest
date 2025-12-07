@@ -1,20 +1,6 @@
 import { nanoid } from "nanoid";
 import { Session, Feedback } from "@/types/feedback";
-
-interface SlideData {
-  id: string;
-  imageUrl?: string;
-  headline?: string;
-  subheadline?: string;
-  bullets?: string[];
-  backgroundColor?: string;
-  originalIdea?: {
-    title: string;
-    content: string;
-    category: string;
-  };
-  timestamp?: string;
-}
+import type { SlideData } from "@/types/slides";
 
 interface SessionData extends Session {
   feedback: Feedback[];
