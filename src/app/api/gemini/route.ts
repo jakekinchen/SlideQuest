@@ -82,7 +82,7 @@ Design requirements:
 - Clear visual hierarchy with the headline prominent
 - Professional color scheme appropriate for the content
 - Any supporting visuals should reinforce the message
-- 16:9 aspect ratio suitable for presentations`;
+- Resolution: 1024x576 pixels (16:9 aspect ratio)`;
     } else {
       // Fallback to original simple prompt for stream-of-consciousness mode
       prompt = `Create a presentation slide image that visually explains the following idea from a speaker:
@@ -92,7 +92,7 @@ Content: ${content}
 Category: ${category}
 ${styleContext}
 The image should be a professional, modern presentation slide. It should include the title and visual elements that explain the content.
-16:9 aspect ratio suitable for presentations.`;
+Resolution: 1024x576 pixels (16:9 aspect ratio).`;
     }
     console.log("Prompt:", prompt);
     const result = await model.generateContent(prompt);
