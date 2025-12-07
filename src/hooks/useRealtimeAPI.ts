@@ -26,8 +26,8 @@ export interface SlideData {
     category: string;
   };
   timestamp: string;
-  isUploaded?: boolean; // Flag to identify uploaded slides
-  source?: "question" | "exploratory" | "slides"; // Source channel
+  isUploaded?: boolean;
+  source?: "question" | "exploratory" | "slides";
 }
 
 // Channel state with queue and current index
@@ -280,7 +280,7 @@ export function useRealtimeAPI() {
 
         if (response.ok) {
           const data = await response.json();
-          console.log("🚦 Gate response:", data);
+          console.log("Gate response:", data);
 
           if (data.shouldCreateSlide && data.slideContent) {
             setGateStatus("Creating slide...");
@@ -302,7 +302,7 @@ export function useRealtimeAPI() {
           }
         }
       } catch (err) {
-        console.error("❌ Gate check failed:", err);
+        console.error("Gate check failed:", err);
         setGateStatus("Gate check failed");
       } finally {
         isGatingRef.current = false;
@@ -315,7 +315,7 @@ export function useRealtimeAPI() {
   // In stream mode, we auto-accept slides directly instead of showing options
   const processIdea = useCallback(
     async (title: string, content: string, category: string) => {
-      console.log("🎯 Processing idea (stream mode):", { title, content, category });
+      console.log("Processing idea (stream mode):", { title, content, category });
       setIsProcessing(true);
 
       // Increment slide counter for this new slide
@@ -337,16 +337,16 @@ export function useRealtimeAPI() {
 
         if (response.ok) {
           const data = await response.json();
-          console.log("✅ Gemini response:", data);
+          console.log("Gemini response:", data);
           if (data.slide) {
             // In stream mode, auto-accept the slide directly
             setAutoAcceptedSlide(data.slide);
           }
         } else {
-          console.error("❌ Gemini API error:", await response.text());
+          console.error("Gemini API error:", await response.text());
         }
       } catch (err) {
-        console.error("❌ Failed to generate slide:", err);
+        console.error("Failed to generate slide:", err);
       } finally {
         setIsProcessing(false);
       }
@@ -383,10 +383,10 @@ export function useRealtimeAPI() {
         category: slideEntry.category,
         slideNumber: acceptedSlidesRef.current.length,
       });
-      console.log("🎨 Added style reference slide:", styleReferencesRef.current.length);
+      console.log("Added style reference slide:", styleReferencesRef.current.length);
     }
 
-    console.log("📚 Recorded accepted slide:", acceptedSlidesRef.current.length, "slides in history");
+    console.log("Recorded accepted slide:", acceptedSlidesRef.current.length, "slides in history");
   }, []);
 
   // Upload and extract slides from files (images, PDFs, PowerPoint, Keynote)
@@ -395,7 +395,7 @@ export function useRealtimeAPI() {
 
     setIsUploadingSlides(true);
     setUploadProgress("Converting files...");
-    console.log("📤 Uploading", files.length, "file(s)");
+    console.log("Uploading", files.length, "file(s)");
 
     try {
       // Convert all files to images (handles PDFs, PPTX, etc.)
@@ -442,11 +442,11 @@ export function useRealtimeAPI() {
         }
       } else {
         const errorData = await response.json().catch(() => ({ error: "Unknown error" }));
-        console.error("❌ Failed to extract slides:", errorData);
+        console.error("Failed to extract slides:", errorData);
         setUploadProgress(errorData.suggestion || errorData.error || "Failed to extract slides");
       }
     } catch (err) {
-      console.error("❌ Upload failed:", err);
+      console.error("Upload failed:", err);
       const message = err instanceof Error ? err.message : "Upload failed";
       setUploadProgress(message);
     } finally {
@@ -512,7 +512,7 @@ export function useRealtimeAPI() {
     connectionRef.current = connection;
 
     connection.on(LiveTranscriptionEvents.Open, async () => {
-      console.log("🔌 Deepgram connection opened");
+      console.log("Deepgram connection opened");
       setIsConnected(true);
 
       try {
@@ -533,14 +533,14 @@ export function useRealtimeAPI() {
             const buffer = await event.data.arrayBuffer();
             current.send(buffer);
           } catch (err) {
-            console.error("❌ Failed to send audio chunk to Deepgram:", err);
+            console.error("Failed to send audio chunk to Deepgram:", err);
           }
         };
 
         recorder.start(250);
         setIsRecording(true);
       } catch (err) {
-        console.error("❌ Microphone access denied or failed:", err);
+        console.error("Microphone access denied or failed:", err);
         setError("Microphone access denied");
         connection.requestClose();
         connectionRef.current = null;
@@ -590,14 +590,14 @@ export function useRealtimeAPI() {
     );
 
     connection.on(LiveTranscriptionEvents.Error, (err) => {
-      console.error("❌ Deepgram connection error:", err);
+      console.error("Deepgram connection error:", err);
       setError("Deepgram connection error");
       setIsConnected(false);
       setIsRecording(false);
     });
 
     connection.on(LiveTranscriptionEvents.Close, () => {
-      console.log("🔌 Deepgram connection closed");
+      console.log("Deepgram connection closed");
       setIsConnected(false);
       setIsRecording(false);
     });
