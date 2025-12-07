@@ -28,6 +28,8 @@ export async function GET() {
         body: JSON.stringify({
           comment: "Temporary client key for realtime streaming",
           time_to_live_in_seconds: 300, // 5 minutes
+          // Minimum scopes needed for realtime listening from the browser
+          scopes: ["usage:read", "usage:write", "listen:stream"],
         }),
       }
     );
