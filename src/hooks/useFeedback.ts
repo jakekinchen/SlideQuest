@@ -11,6 +11,7 @@ export function useFeedback(sessionId: string | null) {
 
   const eventSourceRef = useRef<EventSource | null>(null);
   const readFeedbackIdsRef = useRef<Set<string>>(new Set());
+  const receivedFeedbackIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (!sessionId) {
@@ -36,16 +37,15 @@ export function useFeedback(sessionId: string | null) {
           const newFeedback = data.payload as Feedback;
           console.log(`Received feedback: "${newFeedback.text.substring(0, 50)}..."`);
 
-          setFeedback((prev) => {
-            // Prevent duplicates
-            if (prev.some((f) => f.id === newFeedback.id)) {
-              return prev;
-            }
-            return [newFeedback, ...prev]; // Newest first
-          });
+          // Prevent duplicates across reconnects/stream glitches
+          if (!receivedFeedbackIdsRef.current.has(newFeedback.id)) {
+            receivedFeedbackIdsRef.current.add(newFeedback.id);
 
-          // Increment unread count
-          setUnreadCount((prev) => prev + 1);
+            setFeedback((prev) => [newFeedback, ...prev]); // Newest first
+
+            // Increment unread count for newly received feedback
+            setUnreadCount((prev) => prev + 1);
+          }
         }
       } catch (err) {
         console.error("Error parsing feedback event:", err);
@@ -70,6 +70,11 @@ export function useFeedback(sessionId: string | null) {
       console.log("Closing feedback stream");
       eventSource.close();
       eventSourceRef.current = null;
+      // Reset tracking so a new session starts clean
+      readFeedbackIdsRef.current = new Set();
+      receivedFeedbackIdsRef.current = new Set();
+      setFeedback([]);
+      setUnreadCount(0);
     };
   }, [sessionId]);
 
@@ -88,8 +93,11 @@ export function useFeedback(sessionId: string | null) {
   // Dismiss (remove) a feedback item
   const dismissFeedback = useCallback((feedbackId: string) => {
     setFeedback((prev) => prev.filter((f) => f.id !== feedbackId));
-    // Also remove from read tracking
-    readFeedbackIdsRef.current.delete(feedbackId);
+    // Also remove from read tracking and adjust unread count if needed
+    const wasRead = readFeedbackIdsRef.current.delete(feedbackId);
+    if (!wasRead) {
+      setUnreadCount((prev) => Math.max(0, prev - 1));
+    }
   }, []);
 
   // Check if a feedback item is read
