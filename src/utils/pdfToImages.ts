@@ -1,9 +1,18 @@
 import * as pdfjsLib from 'pdfjs-dist';
 import type { SlideData } from '@/hooks/useRealtimeAPI';
 
-// Configure the worker
-if (typeof window !== 'undefined') {
-  pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+let pdfWorker: Worker | null = null;
+
+// Configure the worker by spawning our own module worker so we avoid CDN fetch issues
+if (typeof window !== 'undefined' && !pdfWorker) {
+  try {
+    pdfWorker = new Worker(new URL('./pdf.worker.ts', import.meta.url), {
+      type: 'module',
+    });
+    pdfjsLib.GlobalWorkerOptions.workerPort = pdfWorker;
+  } catch (err) {
+    console.error('Failed to initialize PDF.js worker', err);
+  }
 }
 
 export async function convertPdfToSlides(file: File): Promise<SlideData[]> {
