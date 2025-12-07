@@ -1,7 +1,7 @@
 # PDF Upload & On-Demand Slide Generation Implementation
 
 ## Overview
-Modified the Living Presentation application to support PDF upload for existing slides and on-demand slide generation based on voice descriptions.
+Modified the Slide Quest application to support PDF upload for existing slides and on-demand slide generation based on voice descriptions.
 
 ## Changes Made
 

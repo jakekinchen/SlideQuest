@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Living Presentation",
+  title: "Slide Quest",
   description: "Speak your ideas. Watch them become slides.",
 };
 
