@@ -6,35 +6,16 @@ import {
   LiveTranscriptionEvents,
   type LiveTranscriptionEvent,
 } from "@deepgram/sdk";
-import { convertFilesToImages } from "@/utils/slideConverter";
 import type { SlideData } from "@/types/slides";
+import type { SlideHistoryEntry, StyleReference } from "@/types/realtime";
+import { useSlideChannels } from "./useSlideChannels";
+import { useSlideUploads } from "./useSlideUploads";
+import { useAudienceQuestions } from "./useAudienceQuestions";
+
 export type { SlideData } from "@/types/slides";
+export type { ChannelType, SlideOptions } from "./useSlideChannels";
 
 export type PresentationMode = "gated" | "stream-of-consciousness";
-
-export type ChannelType = "exploratory" | "audience" | "slides";
-
-// Channel state with queue and current index
-export interface ChannelState {
-  queue: SlideData[];
-  currentIndex: number;
-}
-
-// Compact slide history entry for API context
-export interface SlideHistoryEntry {
-  id: string;
-  headline: string;
-  visualDescription: string;
-  category: string;
-}
-
-// Style reference for maintaining visual consistency
-export interface StyleReference {
-  headline: string;
-  visualDescription: string;
-  category: string;
-  slideNumber: number;
-}
 
 interface SlideContent {
   headline: string;
@@ -45,11 +26,29 @@ interface SlideContent {
   sourceTranscript: string;
 }
 
-export type SlideOptions = [SlideData | null, SlideData | null];
-
-const initialChannelState: ChannelState = { queue: [], currentIndex: 0 };
-
 export function useRealtimeAPI() {
+  const {
+    exploratoryChannel,
+    audienceChannel,
+    slidesChannel,
+    slideOptions,
+    uploadedSlides,
+    addToExploratoryChannel,
+    navigateChannel,
+    getChannelSlide,
+    getChannelInfo,
+    takeSlideFromChannel,
+    removeSlideOption,
+    appendAudienceSlide,
+    appendSlidesToSlidesChannel,
+    useUploadedSlide,
+    getNextUploadedSlide,
+    removeUploadedSlide,
+    clearUploadedSlides,
+    resetChannels,
+    clearExploratoryChannel,
+  } = useSlideChannels();
+
   const [isConnected, setIsConnected] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -60,20 +59,6 @@ export function useRealtimeAPI() {
   const [gateStatus, setGateStatus] = useState<string>("");
   const [curatorStatus, setCuratorStatus] = useState<string>("");
   const [autoAcceptedSlide, setAutoAcceptedSlide] = useState<SlideData | null>(null);
-  const [isUploadingSlides, setIsUploadingSlides] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState<string>("");
-
-  // Channel-based slide queues
-  const [exploratoryChannel, setExploratoryChannel] = useState<ChannelState>(initialChannelState);
-  const [audienceChannel, setAudienceChannel] = useState<ChannelState>(initialChannelState);
-  const [slidesChannel, setSlidesChannel] = useState<ChannelState>(initialChannelState);
-
-  // Legacy compatibility - derive slideOptions and uploadedSlides from channels
-  const slideOptions: SlideOptions = [
-    exploratoryChannel.queue[exploratoryChannel.currentIndex] || null,
-    exploratoryChannel.queue[exploratoryChannel.currentIndex + 1] || null,
-  ];
-  const uploadedSlides = slidesChannel.queue;
 
   type DeepgramLiveConnection = ReturnType<
     ReturnType<typeof createClient>["listen"]["live"]
@@ -91,265 +76,19 @@ export function useRealtimeAPI() {
   const acceptedSlidesRef = useRef<SlideHistoryEntry[]>([]);
   const styleReferencesRef = useRef<StyleReference[]>([]);
   const slideCounterRef = useRef<number>(0);
-  const exploratoryChannelRef = useRef<ChannelState>(initialChannelState);
+  const { isUploadingSlides, uploadProgress, uploadSlides } = useSlideUploads({
+    appendSlidesToSlidesChannel,
+    styleReferencesRef,
+  });
 
-  // Keep refs in sync with state
   modeRef.current = mode;
-  exploratoryChannelRef.current = exploratoryChannel;
 
-  // Add slide to exploratory channel queue (new slides at top)
-  const addToExploratoryChannel = useCallback((newSlide: SlideData) => {
-    const slideWithSource = { ...newSlide, source: "exploratory" as const };
-    setExploratoryChannel((prev) => {
-      // Preserve the currently-viewed slide when inserting at top
-      const currentSlide = prev.queue[prev.currentIndex] ?? null;
-      const newQueue = [slideWithSource, ...prev.queue].slice(0, 10);
-
-      // Find the new index of the previously-viewed slide
-      const newIndex = currentSlide
-        ? Math.max(0, newQueue.findIndex((s) => s.id === currentSlide.id))
-        : 0;
-
-      return {
-        queue: newQueue,
-        currentIndex: newIndex === -1 ? 0 : newIndex,
-      };
-    });
-    console.log("Added slide to exploratory channel");
-  }, []);
-
-  // Track audience question processing
-  const [isAnsweringQuestion, setIsAnsweringQuestion] = useState(false);
-
-  interface AudienceQuestionGateResult {
-    accept: boolean;
-    reason?: string;
-    normalizedQuestion?: string;
-    category?: string;
-    priority?: "low" | "normal" | "high";
-  }
-
-  // Add slide to audience channel queue (for audience questions)
-  // This now runs through a gate, answers the question, and generates an image slide
-  const addToAudienceChannel = useCallback(
-    async (
-      questionText: string,
-      feedbackId: string
-    ): Promise<{ accepted: boolean; reason?: string }> => {
-      console.log("Processing audience question:", questionText);
-      setIsAnsweringQuestion(true);
-
-      try {
-        const trimmedQuestion = questionText.trim();
-        if (!trimmedQuestion) {
-          return { accepted: false, reason: "Empty question text" };
-        }
-
-        // Step 0: Gate/filter the question quality and relevance
-        let gateResult: AudienceQuestionGateResult | null = null;
-        try {
-          const gateResponse = await fetch("/api/audience-question-gate", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              question: trimmedQuestion,
-              slideHistory: acceptedSlidesRef.current,
-            }),
-          });
-
-          if (gateResponse.ok) {
-            gateResult = (await gateResponse.json()) as AudienceQuestionGateResult;
-          } else {
-            console.error("Audience question gate error:", await gateResponse.text());
-          }
-        } catch (gateError) {
-          console.error("Audience question gate request failed:", gateError);
-        }
-
-        if (gateResult && gateResult.accept === false) {
-          console.log("Audience question rejected by gate:", gateResult.reason);
-          return {
-            accepted: false,
-            reason: gateResult.reason || "Question rejected by gate",
-          };
-        }
-
-        const gatedQuestion =
-          (gateResult && gateResult.normalizedQuestion) || trimmedQuestion;
-
-        // Step 1: Get an answer to the question
-        const answerResponse = await fetch("/api/answer-question", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            question: gatedQuestion,
-            presentationContext: acceptedSlidesRef.current
-              .slice(-3)
-              .map((s) => `${s.headline}: ${s.visualDescription}`)
-              .join("\n"),
-          }),
-        });
-
-        if (!answerResponse.ok) {
-          throw new Error("Failed to get answer");
-        }
-
-        const answerData = await answerResponse.json();
-        const answer = answerData.answer;
-
-        // Step 2: Generate the slide image using Gemini
-        slideCounterRef.current += 1;
-        const currentSlideNumber = slideCounterRef.current;
-
-        const geminiResponse = await fetch("/api/gemini", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            slideContent: {
-              headline: answer.headline,
-              subheadline: answer.subheadline,
-              bullets: answer.bullets,
-              visualDescription: answer.visualDescription,
-              category: answer.category,
-              sourceTranscript: `Q: ${gatedQuestion}`,
-            },
-            styleReferences: styleReferencesRef.current,
-            slideNumber: currentSlideNumber,
-          }),
-        });
-
-        if (!geminiResponse.ok) {
-          const errorData = await geminiResponse.json().catch(() => ({}));
-          console.error("Gemini error details:", errorData);
-          throw new Error(errorData.details || "Failed to generate slide image");
-        }
-
-        const geminiData = await geminiResponse.json();
-
-        // Step 3: Create the slide with the generated image
-        const answerSlide: SlideData = {
-          id: `audience-${feedbackId}`,
-          imageUrl: geminiData.slide?.imageUrl,
-          headline: answer.headline,
-          subheadline: answer.subheadline,
-          bullets: answer.bullets,
-          visualDescription: answer.visualDescription,
-          source: "question",
-          originalIdea: {
-            title: `Audience Question`,
-            content: `Q: ${gatedQuestion}`,
-            category: gateResult?.category || answer.category || "question",
-          },
-          timestamp: new Date().toISOString(),
-        };
-
-        setAudienceChannel((prev) => ({
-          ...prev,
-          queue: [...prev.queue, answerSlide],
-        }));
-        console.log("Added answered question slide to audience channel");
-
-        return { accepted: true, reason: gateResult?.reason };
-      } catch (error) {
-        console.error("Failed to process audience question:", error);
-        // Fallback: add the question as-is without an answer
-        const fallbackSlide: SlideData = {
-          id: `audience-${feedbackId}`,
-          headline: questionText,
-          source: "question",
-          originalIdea: {
-            title: "Audience Question",
-            content: questionText,
-            category: "question",
-          },
-          timestamp: new Date().toISOString(),
-        };
-        setAudienceChannel((prev) => ({
-          ...prev,
-          queue: [...prev.queue, fallbackSlide],
-        }));
-        return {
-          accepted: true,
-          reason: "Fallback slide created due to processing error",
-        };
-      } finally {
-        setIsAnsweringQuestion(false);
-      }
-    },
-    []
-  );
-
-  // Navigate within a channel (for previewing without selecting)
-  const navigateChannel = useCallback((channel: ChannelType, direction: "prev" | "next") => {
-    const setChannel = channel === "exploratory"
-      ? setExploratoryChannel
-      : channel === "audience"
-        ? setAudienceChannel
-        : setSlidesChannel;
-
-    setChannel((prev) => {
-      const maxIndex = Math.max(0, prev.queue.length - 1);
-      let newIndex = prev.currentIndex;
-      if (direction === "prev") {
-        newIndex = Math.max(0, prev.currentIndex - 1);
-      } else {
-        newIndex = Math.min(maxIndex, prev.currentIndex + 1);
-      }
-      return { ...prev, currentIndex: newIndex };
-    });
-  }, []);
-
-  // Get current slide for a channel
-  const getChannelSlide = useCallback((channel: ChannelType): SlideData | null => {
-    const state = channel === "exploratory"
-      ? exploratoryChannel
-      : channel === "audience"
-        ? audienceChannel
-        : slidesChannel;
-    return state.queue[state.currentIndex] || null;
-  }, [exploratoryChannel, audienceChannel, slidesChannel]);
-
-  // Get channel navigation info
-  const getChannelInfo = useCallback((channel: ChannelType) => {
-    const state = channel === "exploratory"
-      ? exploratoryChannel
-      : channel === "audience"
-        ? audienceChannel
-        : slidesChannel;
-    return {
-      total: state.queue.length,
-      currentIndex: state.currentIndex,
-      canGoPrev: state.currentIndex > 0,
-      canGoNext: state.currentIndex < state.queue.length - 1,
-    };
-  }, [exploratoryChannel, audienceChannel, slidesChannel]);
-
-  // Use a slide from a channel (adds to history)
-  const takeSlideFromChannel = useCallback((channel: ChannelType): SlideData | null => {
-    const setChannel = channel === "exploratory"
-      ? setExploratoryChannel
-      : channel === "audience"
-        ? setAudienceChannel
-        : setSlidesChannel;
-
-    const state = channel === "exploratory"
-      ? exploratoryChannel
-      : channel === "audience"
-        ? audienceChannel
-        : slidesChannel;
-
-    const slide = state.queue[state.currentIndex];
-    if (!slide) return null;
-
-    // Remove used slide from queue
-    setChannel((prev) => {
-      const newQueue = prev.queue.filter((_, i) => i !== prev.currentIndex);
-      const newIndex = Math.min(prev.currentIndex, Math.max(0, newQueue.length - 1));
-      return { queue: newQueue, currentIndex: newIndex };
-    });
-
-    return slide;
-  }, [exploratoryChannel, audienceChannel, slidesChannel]);
+  const { isAnsweringQuestion, addToAudienceChannel } = useAudienceQuestions({
+    appendAudienceSlide,
+    acceptedSlidesRef,
+    styleReferencesRef,
+    slideCounterRef,
+  });
 
   // Generate slide image from structured content (used in gated mode)
   const generateSlideImage = useCallback(
@@ -551,24 +290,6 @@ export function useRealtimeAPI() {
     [generateSlideImage]
   );
 
-  // Remove a slide from exploratory channel (legacy compatibility)
-  const removeSlideOption = useCallback((id: string) => {
-    setExploratoryChannel((prev) => {
-      const removedIndex = prev.queue.findIndex((s) => s.id === id);
-      const newQueue = prev.queue.filter((s) => s.id !== id);
-
-      // Adjust currentIndex: if we removed a slide before or at currentIndex, shift down
-      let newIndex = prev.currentIndex;
-      if (removedIndex !== -1 && removedIndex <= prev.currentIndex) {
-        newIndex = Math.max(0, prev.currentIndex - 1);
-      }
-      // Ensure index is within bounds
-      newIndex = Math.min(newIndex, Math.max(0, newQueue.length - 1));
-
-      return { queue: newQueue, currentIndex: newIndex };
-    });
-  }, []);
-
   // Record an accepted slide for context in future gate calls
   const recordAcceptedSlide = useCallback(
     (slide: SlideData) => {
@@ -611,140 +332,7 @@ export function useRealtimeAPI() {
     [generateAudienceFollowups]
   );
 
-  // Upload and extract slides from files (images, PDFs, PowerPoint, Keynote)
-  const uploadSlides = useCallback(async (files: File[]) => {
-    if (files.length === 0) return;
-
-    setIsUploadingSlides(true);
-    setUploadProgress("Converting files...");
-    console.log("Uploading", files.length, "file(s)");
-
-    try {
-      // Convert all files to images (handles PDFs, PPTX, etc.)
-      // NOTE: For very large PDFs, only the first N pages are converted
-      // (see pdfToImages maxPages setting) to keep processing responsive.
-      const convertedSlides = await convertFilesToImages(
-        files,
-        (message, current, total) => {
-          setUploadProgress(`${message} (${current}/${total})`);
-        }
-      );
-
-      if (convertedSlides.length === 0) {
-        setUploadProgress("No slides extracted");
-        return;
-      }
-
-      setUploadProgress(`Extracting content from ${convertedSlides.length} slide(s)...`);
-
-      // Send converted images to extraction API
-      const images = convertedSlides.map((slide) => ({
-        dataUrl: slide.dataUrl,
-        fileName: slide.fileName,
-      }));
-
-      const response = await fetch("/api/extract-slides", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ images }),
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        console.log("Extracted", data.count, "slides");
-        if (data.slides && data.slides.length > 0) {
-          // Add uploaded slides to the slides channel with source marker
-          const slidesWithSource = data.slides.map((s: SlideData) => ({
-            ...s,
-            source: "slides" as const,
-          }));
-          setSlidesChannel((prev) => ({
-            ...prev,
-            queue: [...prev.queue, ...slidesWithSource],
-          }));
-
-          // Use first 2 uploaded slides as style references for exploratory slides
-          // This ensures generated slides match the uploaded presentation's visual style
-          const slidesToUseAsStyle = slidesWithSource.slice(0, 2);
-          slidesToUseAsStyle.forEach((slide: SlideData, index: number) => {
-            if (styleReferencesRef.current.length < 2) {
-              styleReferencesRef.current.push({
-                headline: slide.headline || slide.originalIdea?.title || "Uploaded Slide",
-                visualDescription: slide.visualDescription || slide.originalIdea?.content || "",
-                category: slide.originalIdea?.category || "uploaded",
-                slideNumber: index + 1,
-              });
-              console.log("Set uploaded slide as style reference:", styleReferencesRef.current.length);
-            }
-          });
-
-          setUploadProgress("");
-        }
-      } else {
-        const errorData = await response.json().catch(() => ({ error: "Unknown error" }));
-        console.error("Failed to extract slides:", errorData);
-        setUploadProgress(errorData.suggestion || errorData.error || "Failed to extract slides");
-      }
-    } catch (err) {
-      console.error("Upload failed:", err);
-      const message = err instanceof Error ? err.message : "Upload failed";
-      setUploadProgress(message);
-    } finally {
-      setIsUploadingSlides(false);
-      // Clear progress after a delay if successful
-      setTimeout(() => setUploadProgress(""), 3000);
-    }
-  }, []);
-
-  // Use an uploaded slide (move to first position in queue)
-  const useUploadedSlide = useCallback((slideId: string): SlideData | null => {
-    const slide = slidesChannel.queue.find((s) => s.id === slideId);
-    if (slide) {
-      // Remove from slides channel queue
-      setSlidesChannel((prev) => {
-        const removedIndex = prev.queue.findIndex((s) => s.id === slideId);
-        const newQueue = prev.queue.filter((s) => s.id !== slideId);
-
-        // Adjust currentIndex if we removed a slide before or at currentIndex
-        let newIndex = prev.currentIndex;
-        if (removedIndex !== -1 && removedIndex <= prev.currentIndex) {
-          newIndex = Math.max(0, prev.currentIndex - 1);
-        }
-        newIndex = Math.min(newIndex, Math.max(0, newQueue.length - 1));
-
-        return { queue: newQueue, currentIndex: newIndex };
-      });
-      return slide;
-    }
-    return null;
-  }, [slidesChannel.queue]);
-
-  // Get next uploaded slide (peek at first in queue)
-  const getNextUploadedSlide = useCallback((): SlideData | null => {
-    return slidesChannel.queue.length > 0 ? slidesChannel.queue[0] : null;
-  }, [slidesChannel.queue]);
-
-  // Remove an uploaded slide without using it
-  const removeUploadedSlide = useCallback((slideId: string) => {
-    setSlidesChannel((prev) => {
-      const removedIndex = prev.queue.findIndex((s) => s.id === slideId);
-      const newQueue = prev.queue.filter((s) => s.id !== slideId);
-
-      // Adjust currentIndex if we removed a slide before or at currentIndex
-      let newIndex = prev.currentIndex;
-      if (removedIndex !== -1 && removedIndex <= prev.currentIndex) {
-        newIndex = Math.max(0, prev.currentIndex - 1);
-      }
-      newIndex = Math.min(newIndex, Math.max(0, newQueue.length - 1));
-
-      return { queue: newQueue, currentIndex: newIndex };
-    });
-  }, []);
-
-  // Clear all uploaded slides
-  const clearUploadedSlides = useCallback(() => {
-    setSlidesChannel({ queue: [], currentIndex: 0 });
-  }, []);
+  // Record an accepted slide for context in future gate calls
 
   const start = useCallback(async () => {
     if (connectionRef.current) return;
@@ -907,20 +495,18 @@ export function useRealtimeAPI() {
     setGateStatus("");
     setCuratorStatus("");
     // Reset all channels
-    setExploratoryChannel(initialChannelState);
-    setAudienceChannel(initialChannelState);
-    setSlidesChannel(initialChannelState);
+    resetChannels();
     fullTranscriptRef.current = "";
     lastGateCheckRef.current = "";
     priorIdeasRef.current = [];
     acceptedSlidesRef.current = [];
     styleReferencesRef.current = [];
     slideCounterRef.current = 0;
-  }, []);
+  }, [resetChannels]);
 
   const clearSlideOptions = useCallback(() => {
-    setExploratoryChannel(initialChannelState);
-  }, []);
+    clearExploratoryChannel();
+  }, [clearExploratoryChannel]);
 
   const clearAutoAcceptedSlide = useCallback(() => {
     setAutoAcceptedSlide(null);
