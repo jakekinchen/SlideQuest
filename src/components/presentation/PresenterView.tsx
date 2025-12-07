@@ -12,6 +12,15 @@ interface PresenterViewProps {
   onExit: () => void;
 }
 
+const EXPLORATORY_SUGGESTIONS: string[] = [
+  "Generate a slide that clearly frames the core problem this presentation is solving.",
+  "Suggest a deep-dive slide that expands on the key idea from the current slide.",
+  "Create a simple 3-step framework slide that organizes this topic for the audience.",
+  "Propose a comparison slide that contrasts the current approach with an alternative.",
+  "Design a slide that highlights key risks, tradeoffs, or challenges and how to address them.",
+  "Create a forward-looking slide about next steps, roadmap, or long-term impact.",
+];
+
 export function PresenterView({ onExit }: PresenterViewProps) {
   const {
     isConnected,
@@ -67,6 +76,11 @@ export function PresenterView({ onExit }: PresenterViewProps) {
   // Exploratory input dialog state
   const [showExploratoryInput, setShowExploratoryInput] = useState(false);
   const [exploratoryInput, setExploratoryInput] = useState("");
+  const [suggestionIndex, setSuggestionIndex] = useState(() =>
+    EXPLORATORY_SUGGESTIONS.length > 0
+      ? Math.floor(Math.random() * EXPLORATORY_SUGGESTIONS.length)
+      : 0
+  );
 
   // Create session on component mount
   useEffect(() => {
@@ -226,6 +240,15 @@ export function PresenterView({ onExit }: PresenterViewProps) {
       presentationWindow.close();
     }
     onExit();
+  };
+
+  const cycleExploratorySuggestion = () => {
+    if (EXPLORATORY_SUGGESTIONS.length === 0) return;
+    setSuggestionIndex((prev) => {
+      const next = (prev + 1) % EXPLORATORY_SUGGESTIONS.length;
+      setExploratoryInput(EXPLORATORY_SUGGESTIONS[next]);
+      return next;
+    });
   };
 
   return (
@@ -411,7 +434,14 @@ export function PresenterView({ onExit }: PresenterViewProps) {
                   ? "Listening for ideas..."
                   : "Type an idea to explore"
               }
-              onEmptyAction={() => setShowExploratoryInput(true)}
+              onEmptyAction={() => {
+                setShowExploratoryInput(true);
+                if (!exploratoryInput && EXPLORATORY_SUGGESTIONS.length > 0) {
+                  setExploratoryInput(
+                    EXPLORATORY_SUGGESTIONS[suggestionIndex]
+                  );
+                }
+              }}
               emptyActionLabel="New exploratory idea"
             />
 
@@ -478,6 +508,20 @@ export function PresenterView({ onExit }: PresenterViewProps) {
               slide for. We&apos;ll consider your current slide, uploaded
               deck, live transcript, and audience context.
             </p>
+            <div className="mb-1 flex items-center justify-between">
+              <span className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">
+                Prompt
+              </span>
+              {EXPLORATORY_SUGGESTIONS.length > 0 && (
+                <button
+                  type="button"
+                  onClick={cycleExploratorySuggestion}
+                  className="rounded-md border border-zinc-700 px-2 py-1 text-[11px] font-medium text-zinc-300 transition-colors hover:bg-zinc-800"
+                >
+                  Suggestions
+                </button>
+              )}
+            </div>
             <textarea
               value={exploratoryInput}
               onChange={(event) => setExploratoryInput(event.target.value)}
