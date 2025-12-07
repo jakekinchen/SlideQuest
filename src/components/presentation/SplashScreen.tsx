@@ -9,7 +9,7 @@ export function SplashScreen({ onStart }: SplashScreenProps) {
     <div className="flex min-h-screen flex-col items-center justify-center gap-8 bg-gradient-to-br from-zinc-900 via-zinc-800 to-zinc-900">
       <div className="text-center">
         <h1 className="mb-4 text-5xl font-bold tracking-tight text-white">
-          Living Presentation
+          Slidequest
         </h1>
         <p className="max-w-md text-lg text-zinc-400">
           Speak your ideas. Watch them become slides.

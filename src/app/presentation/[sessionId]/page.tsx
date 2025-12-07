@@ -151,7 +151,7 @@ export default function PresentationPage({
       return (
         <div className="flex min-h-screen items-center justify-center bg-zinc-900">
           <div className="text-center text-zinc-600">
-            <h1 className="mb-4 text-4xl font-bold text-zinc-400">Living Presentation</h1>
+            <h1 className="mb-4 text-4xl font-bold text-zinc-400">Slidequest</h1>
             <p className="text-xl">Waiting for slides...</p>
             <p className="mt-4 text-sm text-zinc-700">
               The presenter will share slides shortly
