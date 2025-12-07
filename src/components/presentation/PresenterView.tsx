@@ -251,6 +251,28 @@ export function PresenterView({ onExit }: PresenterViewProps) {
           </div>
 
           <div className="flex items-center gap-3">
+            {/* Audience display controls */}
+            {audienceUrl && (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowQRCode(!showQRCode)}
+                  className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+                    showQRCode
+                      ? "bg-white text-zinc-900"
+                      : "border border-zinc-700 text-zinc-300 hover:bg-zinc-800"
+                  }`}
+                >
+                  {showQRCode ? "Hide QR Code" : "Show QR Code"}
+                </button>
+                <button
+                  onClick={() => setShowUrl(!showUrl)}
+                  className="rounded-lg border border-zinc-700 px-4 py-2 text-sm font-medium text-zinc-300 transition-colors hover:bg-zinc-800"
+                >
+                  {showUrl ? "Hide URL" : "Show URL"}
+                </button>
+              </div>
+            )}
+
             {/* Mode Toggle */}
             <div className="flex items-center gap-2 rounded-lg border border-zinc-700 p-1">
               <button
@@ -308,37 +330,17 @@ export function PresenterView({ onExit }: PresenterViewProps) {
         </div>
 
         {/* Audience Controls */}
-        {audienceUrl && (
+        {audienceUrl && showUrl && (
           <div className="flex flex-col gap-2">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-900/50 px-4 py-2">
+              <code className="flex-1 text-sm text-zinc-300">{audienceUrl}</code>
               <button
-                onClick={() => setShowQRCode(!showQRCode)}
-                className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
-                  showQRCode
-                    ? "bg-white text-zinc-900"
-                    : "border border-zinc-700 text-zinc-300 hover:bg-zinc-800"
-                }`}
+                onClick={copyAudienceUrl}
+                className="rounded bg-zinc-700 px-3 py-1 text-xs font-medium text-zinc-300 transition-colors hover:bg-zinc-600"
               >
-                {showQRCode ? "Hide QR Code" : "Show QR Code"}
-              </button>
-              <button
-                onClick={() => setShowUrl(!showUrl)}
-                className="rounded-lg border border-zinc-700 px-4 py-2 text-sm font-medium text-zinc-300 transition-colors hover:bg-zinc-800"
-              >
-                {showUrl ? "Hide URL" : "Show URL"}
+                Copy
               </button>
             </div>
-            {showUrl && (
-              <div className="flex items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-900/50 px-4 py-2">
-                <code className="flex-1 text-sm text-zinc-300">{audienceUrl}</code>
-                <button
-                  onClick={copyAudienceUrl}
-                  className="rounded bg-zinc-700 px-3 py-1 text-xs font-medium text-zinc-300 transition-colors hover:bg-zinc-600"
-                >
-                  Copy
-                </button>
-              </div>
-            )}
           </div>
         )}
       </header>
