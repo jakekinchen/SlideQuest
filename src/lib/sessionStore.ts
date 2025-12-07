@@ -19,6 +19,8 @@ interface SlideData {
 interface SessionData extends Session {
   feedback: Feedback[];
   currentSlide: SlideData | null;
+  showQRCode: boolean;
+  audienceUrl: string | null;
 }
 
 // In-memory store for sessions
@@ -51,6 +53,8 @@ export const sessionStore = {
       expiresAt,
       feedback: [],
       currentSlide: null,
+      showQRCode: false,
+      audienceUrl: null,
     };
 
     sessions.set(id, session);
@@ -136,7 +140,7 @@ export const sessionStore = {
    * Updates the current slide for a session
    * Returns true if successful, false if session not found
    */
-  updateCurrentSlide(sessionId: string, slide: SlideData | null): boolean {
+  updateCurrentSlide(sessionId: string, slide: SlideData | null, showQRCode?: boolean, audienceUrl?: string | null): boolean {
     const session = sessions.get(sessionId);
     if (!session) return false;
 
@@ -147,14 +151,20 @@ export const sessionStore = {
     }
 
     session.currentSlide = slide;
+    if (showQRCode !== undefined) {
+      session.showQRCode = showQRCode;
+    }
+    if (audienceUrl !== undefined) {
+      session.audienceUrl = audienceUrl;
+    }
     console.log(`📺 Updated current slide for session ${sessionId}`);
     return true;
   },
 
   /**
-   * Gets the current slide for a session
+   * Gets the current slide for a session along with QR code state
    */
-  getCurrentSlide(sessionId: string): SlideData | null {
+  getCurrentSlide(sessionId: string): { slide: SlideData | null; showQRCode: boolean; audienceUrl: string | null } | null {
     const session = sessions.get(sessionId);
     if (!session) return null;
 
@@ -164,6 +174,10 @@ export const sessionStore = {
       return null;
     }
 
-    return session.currentSlide;
+    return {
+      slide: session.currentSlide,
+      showQRCode: session.showQRCode,
+      audienceUrl: session.audienceUrl,
+    };
   },
 };

@@ -19,10 +19,10 @@ export async function POST(
 
     // Parse request body
     const body = await request.json();
-    const { slide } = body;
+    const { slide, showQRCode, audienceUrl } = body;
 
     // Update current slide (can be null to clear)
-    const success = sessionStore.updateCurrentSlide(sessionId, slide);
+    const success = sessionStore.updateCurrentSlide(sessionId, slide, showQRCode, audienceUrl);
 
     if (!success) {
       return NextResponse.json(
@@ -57,10 +57,11 @@ export async function GET(
       );
     }
 
-    // Get current slide
-    const slide = sessionStore.getCurrentSlide(sessionId);
+    // Get current slide and QR code state
+    const slideData = sessionStore.getCurrentSlide(sessionId);
 
-    return NextResponse.json({ slide });
+    // Return with default values if slideData is null (shouldn't happen if session was validated)
+    return NextResponse.json(slideData ?? { slide: null, showQRCode: false, audienceUrl: null });
   } catch (error) {
     console.error("❌ Error getting slide:", error);
     return NextResponse.json(

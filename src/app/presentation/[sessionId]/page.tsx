@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { use } from "react";
 import { SlideCanvas } from "@/components/presentation/SlideCanvas";
+import QRCode from "react-qr-code";
 
 interface SlideData {
   id: string;
@@ -28,6 +29,8 @@ export default function PresentationPage({
   const { sessionId } = use(params);
   const [slide, setSlide] = useState<SlideData | null>(null);
   const [sessionValid, setSessionValid] = useState<boolean | null>(null);
+  const [showQRCode, setShowQRCode] = useState(false);
+  const [audienceUrl, setAudienceUrl] = useState<string | null>(null);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [feedbackText, setFeedbackText] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -57,6 +60,8 @@ export default function PresentationPage({
 
       if (event.data.type === "UPDATE_SLIDE") {
         setSlide(event.data.slide);
+        setShowQRCode(event.data.showQRCode ?? false);
+        setAudienceUrl(event.data.audienceUrl ?? null);
       }
     };
 
@@ -76,6 +81,8 @@ export default function PresentationPage({
           if (data.slide) {
             setSlide(data.slide);
           }
+          setShowQRCode(data.showQRCode ?? false);
+          setAudienceUrl(data.audienceUrl ?? null);
         }
       } catch (error) {
         console.error("Error polling for slides:", error);
@@ -176,6 +183,23 @@ export default function PresentationPage({
     <>
       {/* Slide Display */}
       {renderSlide()}
+
+      {/* QR Code Overlay */}
+      {showQRCode && audienceUrl && (
+        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-6 rounded-2xl bg-zinc-900/90 px-8 py-6 shadow-2xl backdrop-blur-sm border border-zinc-700">
+          <div className="rounded-xl bg-white p-4">
+            <QRCode value={audienceUrl} size={160} />
+          </div>
+          <div className="text-center">
+            <p className="text-2xl font-semibold text-white">
+              Scan to join the audience
+            </p>
+            <p className="mt-2 text-lg text-zinc-400">
+              Ask questions and participate
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Floating "Ask a Question" Button */}
       <button

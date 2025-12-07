@@ -44,6 +44,8 @@ export function PresenterView({ onExit }: PresenterViewProps) {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [audienceUrl, setAudienceUrl] = useState<string | null>(null);
   const [creatingSession, setCreatingSession] = useState(false);
+  const [showQRCode, setShowQRCode] = useState(false);
+  const [showUrl, setShowUrl] = useState(false);
 
   // Feedback hook - will connect when sessionId is set
   const { feedback, dismissFeedback } = useFeedback(sessionId);
@@ -136,7 +138,7 @@ export function PresenterView({ onExit }: PresenterViewProps) {
     // Send to local presentation window via postMessage
     if (presentationWindow && !presentationWindow.closed) {
       presentationWindow.postMessage(
-        { type: "UPDATE_SLIDE", slide: currentSlide },
+        { type: "UPDATE_SLIDE", slide: currentSlide, showQRCode, audienceUrl },
         window.location.origin
       );
     }
@@ -146,10 +148,10 @@ export function PresenterView({ onExit }: PresenterViewProps) {
       fetch(`/api/sessions/${sessionId}/slide`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ slide: currentSlide }),
+        body: JSON.stringify({ slide: currentSlide, showQRCode, audienceUrl }),
       }).catch((err) => console.error("Failed to broadcast slide:", err));
     }
-  }, [currentSlide, presentationWindow, sessionId]);
+  }, [currentSlide, presentationWindow, sessionId, showQRCode, audienceUrl]);
 
   // Auto-accept slides in stream mode
   useEffect(() => {
@@ -306,17 +308,38 @@ export function PresenterView({ onExit }: PresenterViewProps) {
           </div>
         </div>
 
-        {/* Audience URL Section */}
+        {/* Audience Controls */}
         {audienceUrl && (
-          <div className="flex items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-900/50 px-4 py-2">
-            <span className="text-sm text-zinc-500">Share with audience:</span>
-            <code className="flex-1 text-sm text-zinc-300">{audienceUrl}</code>
-            <button
-              onClick={copyAudienceUrl}
-              className="rounded bg-zinc-700 px-3 py-1 text-xs font-medium text-zinc-300 transition-colors hover:bg-zinc-600"
-            >
-              Copy
-            </button>
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowQRCode(!showQRCode)}
+                className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+                  showQRCode
+                    ? "bg-white text-zinc-900"
+                    : "border border-zinc-700 text-zinc-300 hover:bg-zinc-800"
+                }`}
+              >
+                {showQRCode ? "Hide QR Code" : "Show QR Code"}
+              </button>
+              <button
+                onClick={() => setShowUrl(!showUrl)}
+                className="rounded-lg border border-zinc-700 px-4 py-2 text-sm font-medium text-zinc-300 transition-colors hover:bg-zinc-800"
+              >
+                {showUrl ? "Hide URL" : "Show URL"}
+              </button>
+            </div>
+            {showUrl && (
+              <div className="flex items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-900/50 px-4 py-2">
+                <code className="flex-1 text-sm text-zinc-300">{audienceUrl}</code>
+                <button
+                  onClick={copyAudienceUrl}
+                  className="rounded bg-zinc-700 px-3 py-1 text-xs font-medium text-zinc-300 transition-colors hover:bg-zinc-600"
+                >
+                  Copy
+                </button>
+              </div>
+            )}
           </div>
         )}
       </header>
