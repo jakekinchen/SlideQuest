@@ -26,6 +26,8 @@ interface SlideContent {
   sourceTranscript: string;
 }
 
+type FollowupSlideContent = Omit<SlideContent, "sourceTranscript">;
+
 export function useRealtimeAPI() {
   const {
     exploratoryChannel,
@@ -220,12 +222,83 @@ export function useRealtimeAPI() {
           console.error("Gemini API error:", await response.text());
         }
       } catch (err) {
-        console.error("Failed to generate slide:", err);
+      console.error("Failed to generate slide:", err);
       } finally {
         setIsProcessing(false);
       }
     },
     []
+  );
+
+  // Generate exploratory follow-up slides based on the currently accepted slide
+  // This is especially useful when we DON'T have a live microphone, but we
+  // do have an uploaded deck and want ideas for "what could come next".
+  const generateSlideFollowups = useCallback(
+    async (slide: SlideData) => {
+      // Only generate follow-ups when we're not actively listening to audio.
+      // When the mic is live, the exploratory channel is driven by the transcript.
+      if (isConnected || isRecording) return;
+
+      // Focus this behavior on uploaded / deck slides
+      if (slide.source !== "slides") return;
+
+      const headline =
+        slide.headline || slide.originalIdea?.title || "Untitled slide";
+      const visualDescription =
+        slide.visualDescription || slide.originalIdea?.content || "";
+
+      if (!headline.trim()) return;
+
+      try {
+        const response = await fetch("/api/slide-followups", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            currentSlide: {
+              headline,
+              subheadline: slide.subheadline,
+              bullets: slide.bullets,
+              visualDescription,
+              category: slide.originalIdea?.category || "concept",
+              source: slide.source,
+            },
+            presentationContext: acceptedSlidesRef.current
+              .slice(-5)
+              .map(
+                (s, index) =>
+                  `${index + 1}. ${s.headline}: ${s.visualDescription}`
+              )
+              .join("\n"),
+          }),
+        });
+
+        if (!response.ok) {
+          console.error(
+            "Failed to generate slide follow-up suggestions:",
+            await response.text()
+          );
+          return;
+        }
+
+        const data = await response.json();
+        const followups = (data.followups || []) as FollowupSlideContent[];
+        if (!followups.length) return;
+
+        for (const followup of followups) {
+          await generateSlideImage({
+            headline: followup.headline,
+            subheadline: followup.subheadline,
+            bullets: followup.bullets,
+            visualDescription: followup.visualDescription,
+            category: followup.category,
+            sourceTranscript: `Follow-up idea based on slide "${headline}"`,
+          });
+        }
+      } catch (err) {
+        console.error("Error generating slide follow-up suggestions:", err);
+      }
+    },
+    [generateSlideImage, isConnected, isRecording]
   );
 
   // Generate follow-up exploratory slides after an audience question slide is accepted
@@ -323,13 +396,17 @@ export function useRealtimeAPI() {
         void generateAudienceFollowups(slide);
       }
 
+      // When a slide from the uploaded deck is accepted and the mic isn't active,
+      // generate exploratory suggestions for potential next slides.
+      void generateSlideFollowups(slide);
+
       console.log(
         "Recorded accepted slide:",
         acceptedSlidesRef.current.length,
         "slides in history"
       );
     },
-    [generateAudienceFollowups]
+    [generateAudienceFollowups, generateSlideFollowups]
   );
 
   // Record an accepted slide for context in future gate calls
