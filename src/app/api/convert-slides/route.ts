@@ -2,10 +2,24 @@ import { NextRequest, NextResponse } from "next/server";
 import { exec } from "child_process";
 import { promisify } from "util";
 import { writeFile, readFile, readdir, unlink, mkdir, rmdir } from "fs/promises";
-import { join } from "path";
+import { join, basename, extname } from "path";
 import { tmpdir } from "os";
 import { existsSync } from "fs";
 import { LibreOfficeFileConverter } from "libreoffice-file-converter";
+
+// Allowed file extensions for conversion
+const ALLOWED_EXTENSIONS = new Set([".pptx", ".ppt", ".key", ".odp", ".pdf"]);
+const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB limit
+
+/**
+ * Sanitize filename to prevent path traversal attacks
+ */
+function sanitizeFilename(filename: string): string {
+  // Extract just the base name (removes any directory components)
+  const base = basename(filename);
+  // Remove any remaining path separators or null bytes
+  return base.replace(/[/\\<>:"|?*\x00-\x1f]/g, "_");
+}
 
 const execAsync = promisify(exec);
 const libreOfficeConverter = new LibreOfficeFileConverter();
@@ -125,6 +139,23 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 });
     }
 
+    // Validate file size
+    if (file.size > MAX_FILE_SIZE) {
+      return NextResponse.json(
+        { error: "File too large. Maximum size is 50MB." },
+        { status: 400 }
+      );
+    }
+
+    // Validate file extension
+    const ext = extname(file.name).toLowerCase();
+    if (!ALLOWED_EXTENSIONS.has(ext)) {
+      return NextResponse.json(
+        { error: `Invalid file type. Allowed types: ${[...ALLOWED_EXTENSIONS].join(", ")}` },
+        { status: 400 }
+      );
+    }
+
     // Check for LibreOffice
     const hasLibreOffice = await isLibreOfficeAvailable();
     if (!hasLibreOffice) {
@@ -143,10 +174,11 @@ export async function POST(request: NextRequest) {
       await mkdir(tempDir, { recursive: true });
     }
 
-    // Save uploaded file
+    // Save uploaded file with sanitized filename
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
-    const inputPath = join(tempDir, file.name);
+    const safeFilename = sanitizeFilename(file.name);
+    const inputPath = join(tempDir, safeFilename);
     await writeFile(inputPath, buffer);
 
     // Convert to PDF first using libreoffice-file-converter

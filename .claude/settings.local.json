@@ -7,7 +7,9 @@
       "Bash(npm install:*)",
       "mcp__ide__getDiagnostics",
       "WebSearch",
-      "WebFetch(domain:ai.google.dev)"
+      "WebFetch(domain:ai.google.dev)",
+      "WebFetch(domain:cdnjs.cloudflare.com)",
+      "WebFetch(domain:unpkg.com)"
     ],
     "deny": [],
     "ask": []

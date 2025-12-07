@@ -13,7 +13,8 @@ async function getPdfJs() {
     pdfjsLib = await import("pdfjs-dist");
     // Use the bundled worker or CDN fallback
     if (!pdfJsInitialized) {
-      pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+      // Use unpkg CDN as cdnjs doesn't have recent pdfjs-dist versions
+      pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
       pdfJsInitialized = true;
       console.log("PDF.js worker configured:", pdfjsLib.GlobalWorkerOptions.workerSrc);
     }
