@@ -58,7 +58,7 @@ export function useRealtimeAPI() {
           if (data.slide) {
             // Mark slide as voice-generated
             const slideWithSource = { ...data.slide, source: "voice" as const };
-            setPendingSlides((prev) => [...prev, slideWithSource]);
+            setPendingSlides((prev) => [slideWithSource, ...prev]);
           }
         } else {
           console.error("❌ Gemini API error:", await response.text());
