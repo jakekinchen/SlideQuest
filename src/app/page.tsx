@@ -1,3 +1,38 @@
+/**
+ * @fileoverview Main presenter interface for SlideQuest
+ *
+ * This is the core UI of the application, containing three major components:
+ * 1. SplashScreen - Initial landing page with "Start Presenting" button
+ * 2. PresenterView - Full presenter interface with slide controls and queue management
+ * 3. SlideCanvas - Pure slide rendering component (shared with audience view)
+ *
+ * Component Architecture:
+ * - Uses custom hooks (useRealtimeAPI, useFeedback) for data management
+ * - Maintains slide history with navigation (forward/backward)
+ * - Manages presentation window via postMessage communication
+ * - Handles PDF uploads, voice slides, and audience questions
+ * - Keyboard shortcuts for presenter controls
+ *
+ * State Management:
+ * - slideNav: { history: SlideData[], index: number } - Navigation state
+ * - pendingSlides: SlideData[] - Queue of slides awaiting approval (from useRealtimeAPI)
+ * - presentationWindow: Window | null - Reference to opened presentation window
+ * - sessionId: string | null - Current session identifier
+ *
+ * Key Features:
+ * - Voice-to-slide generation (record button)
+ * - PDF slide upload
+ * - Audience question integration
+ * - Slide queue management (accept/skip)
+ * - Real-time presentation window synchronization
+ * - Keyboard navigation (arrow keys)
+ * - Session management (start/exit)
+ *
+ * Communication:
+ * - postMessage to sync slides with local presentation window
+ * - API calls to sync slides with remote audience members (via sessionStore)
+ */
+
 "use client";
 
 import { useState, useEffect, useRef } from "react";
@@ -5,7 +40,10 @@ import { useRealtimeAPI, SlideData } from "@/hooks/useRealtimeAPI";
 import { useFeedback } from "@/hooks/useFeedback";
 import { Logo } from "@/components/Logo";
 
-// Background color mapping - new sophisticated slide colors
+/**
+ * Background color mapping for Tailwind CSS classes.
+ * Named colors use inline styles (see slideColors), hex colors use inline styles.
+ */
 const bgColors: Record<string, string> = {
   ocean: "",  // Will use inline style
   forest: "",
@@ -17,7 +55,10 @@ const bgColors: Record<string, string> = {
   black: "bg-black",
 };
 
-// Slide color definitions
+/**
+ * Named color palette for presentation slides.
+ * Maps color names to hex values for consistent theming.
+ */
 const slideColors: Record<string, string> = {
   ocean: "#1e40af",
   forest: "#047857",
@@ -27,9 +68,17 @@ const slideColors: Record<string, string> = {
   teal: "#0d9488",
 };
 
-// Light colors that need dark text
+/**
+ * List of light colors that require dark text for readability.
+ * Used by isLightColor() to determine text color contrast.
+ */
 const lightColors = ["white", "#ffffff", "#fff", "#f0f8ff", "#fafafa", "#f5f5f5", "#e5e5e5", "amber"];
 
+/**
+ * Determines if a color is light enough to require dark text.
+ * Uses heuristic: checks if color name is in lightColors list,
+ * or if hex color starts with high luminance values (f, e, d, c).
+ */
 function isLightColor(color: string): boolean {
   const lower = color.toLowerCase();
   if (lightColors.includes(lower)) return true;
@@ -40,26 +89,50 @@ function isLightColor(color: string): boolean {
   return false;
 }
 
+/**
+ * Returns Tailwind CSS class for background color.
+ * Returns empty string for named/hex colors (use inline style instead).
+ */
 function getBgClass(color: string): string {
   const lower = color.toLowerCase();
   if (bgColors[lower]) return bgColors[lower];
-  if (color.startsWith("#")) return "";
-  return "bg-zinc-800";
+  if (color.startsWith("#")) return ""; // Use inline style for hex
+  return "bg-zinc-800"; // Default dark background
 }
 
+/**
+ * Returns inline style object for background color.
+ * Handles both named colors (from slideColors) and hex colors.
+ */
 function getBgStyle(color: string): React.CSSProperties {
-  // Check if it's one of our named slide colors
+  // Named colors from our palette
   if (slideColors[color]) {
     return { backgroundColor: slideColors[color] };
   }
-  // Otherwise, if it's a hex color, use it directly
+  // Direct hex colors
   if (color.startsWith("#")) {
     return { backgroundColor: color };
   }
-  return {};
+  return {}; // No inline style needed (will use Tailwind class)
 }
 
-// Slide Canvas - the pure presentation view
+/**
+ * SlideCanvas component renders a single presentation slide.
+ *
+ * Supports three slide types:
+ * 1. PDF image slides (slide.imageUrl present)
+ * 2. Audience question slides (slide.source === "question")
+ * 3. Text-based slides (headline, subheadline, bullets)
+ *
+ * Features:
+ * - Automatic text color contrast based on background
+ * - Special template for audience questions (coral gradient)
+ * - Fullscreen mode support
+ * - Responsive typography and layout
+ *
+ * @param slide - Slide data to render, or null for waiting state
+ * @param isFullscreen - Whether to render in fullscreen mode (for presentation window)
+ */
 function SlideCanvas({ slide, isFullscreen = false }: { slide: SlideData | null; isFullscreen?: boolean }) {
   if (!slide) {
     return (
@@ -150,7 +223,13 @@ function SlideCanvas({ slide, isFullscreen = false }: { slide: SlideData | null;
   );
 }
 
-// Splash screen
+/**
+ * SplashScreen component - Initial landing page.
+ *
+ * Displays branding and "Start Presenting" button. Shows before creating a session.
+ *
+ * @param onStart - Callback when user clicks "Start Presenting" button
+ */
 function SplashScreen({ onStart }: { onStart: () => void }) {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-8 bg-gradient-to-br from-canvas-900 via-canvas-800 to-canvas-900">
@@ -181,7 +260,40 @@ function SplashScreen({ onStart }: { onStart: () => void }) {
   );
 }
 
-// Main presenter view with controls
+/**
+ * PresenterView component - Main presenter interface with full controls.
+ *
+ * This is the core component containing all presenter functionality:
+ *
+ * Layout (3-panel):
+ * - Left sidebar: Slide navigation and controls
+ * - Center: Current slide preview
+ * - Right sidebar: Audience feedback queue
+ * - Bottom: Pending slides queue
+ *
+ * State Management:
+ * - slideNav: Maintains slide history with current index for navigation
+ * - presentationWindow: Reference to opened presentation window (for postMessage)
+ * - sessionId: Current session ID (for API calls and audience URL)
+ * - pendingSlides: Queue from useRealtimeAPI hook
+ * - feedback: Real-time feedback from useFeedback hook
+ *
+ * Key Features:
+ * 1. Voice recording (start/stop button)
+ * 2. PDF upload
+ * 3. Slide queue management (accept/skip)
+ * 4. Slide navigation (previous/next)
+ * 5. Presentation window management (open/close)
+ * 6. Audience feedback display and conversion to slides
+ * 7. Keyboard shortcuts (arrow keys for navigation)
+ * 8. Session info display (ID, audience URL)
+ *
+ * Synchronization:
+ * - Sends slides to presentationWindow via postMessage
+ * - Sends slides to remote audience via POST /api/sessions/[sessionId]/slide
+ *
+ * @param onExit - Callback when user clicks "Exit" to return to splash screen
+ */
 function PresenterView({ onExit }: { onExit: () => void }) {
   const {
     isConnected,

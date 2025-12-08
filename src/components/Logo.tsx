@@ -1,10 +1,44 @@
+/**
+ * @fileoverview SlideQuest logo component
+ *
+ * SVG-based logo with multiple variants (colors) and sizes.
+ * Logo design represents sound waves (voice input) transforming into presentation slides.
+ *
+ * Features:
+ * - Multiple color variants (default, dark, light, gradient)
+ * - Responsive sizing (sm, md, lg, xl)
+ * - Optional hover animation
+ * - Accessible with aria-label
+ */
+
+/**
+ * Props for Logo component
+ */
 interface LogoProps {
+  /** Color variant for different backgrounds */
   variant?: "default" | "dark" | "light" | "gradient";
+  /** Size of the logo */
   size?: "sm" | "md" | "lg" | "xl";
+  /** Enable hover scale animation */
   animated?: boolean;
+  /** Additional CSS classes */
   className?: string;
 }
 
+/**
+ * SlideQuest brand logo component.
+ *
+ * Renders an SVG logo with sound waves transitioning to slides,
+ * representing the core concept of voice-to-slide generation.
+ *
+ * @example
+ * // Large gradient animated logo
+ * <Logo variant="gradient" size="xl" animated />
+ *
+ * @example
+ * // Small dark variant
+ * <Logo variant="dark" size="sm" />
+ */
 export function Logo({
   variant = "default",
   size = "md",
