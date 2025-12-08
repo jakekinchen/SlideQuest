@@ -269,33 +269,8 @@ function NextSlidePreview({
   );
 }
 
-// Splash screen with PDF upload
-function SplashScreen({ onStart }: { onStart: (pdfSlides?: SlideData[]) => void }) {
-  const [uploadedPdfSlides, setUploadedPdfSlides] = useState<SlideData[] | null>(null);
-  const [isProcessingPdf, setIsProcessingPdf] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const handlePdfUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file || file.type !== 'application/pdf') {
-      alert('Please upload a PDF file');
-      return;
-    }
-
-    setIsProcessingPdf(true);
-    try {
-      const { convertPdfToSlides } = await import('@/utils/pdfToImages');
-      const slides = await convertPdfToSlides(file);
-      setUploadedPdfSlides(slides);
-      console.log(`✅ Converted ${slides.length} PDF pages to slides`);
-    } catch (error) {
-      console.error('❌ Failed to process PDF:', error);
-      alert('Failed to process PDF. Please try again.');
-    } finally {
-      setIsProcessingPdf(false);
-    }
-  };
-
+// Splash screen
+function SplashScreen({ onStart }: { onStart: () => void }) {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-8 bg-gradient-to-br from-canvas-900 via-canvas-800 to-canvas-900">
       <div className="text-center">
@@ -306,61 +281,12 @@ function SplashScreen({ onStart }: { onStart: (pdfSlides?: SlideData[]) => void 
           SlideQuest
         </h1>
         <p className="max-w-md text-lg text-canvas-400">
-          Upload your slides, then speak new ideas into existence.
+          Speak new ideas into existence.
         </p>
       </div>
 
-      {/* PDF Upload Section */}
-      <div className="flex flex-col items-center gap-4">
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="application/pdf"
-          onChange={handlePdfUpload}
-          className="hidden"
-        />
-
-        {!uploadedPdfSlides ? (
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={isProcessingPdf}
-            className="rounded-xl border-2 border-dashed border-canvas-600 bg-canvas-800/50 px-8 py-6 text-center transition-all duration-300 hover:border-coral-400/50 hover:bg-canvas-800/60 disabled:opacity-50"
-          >
-            <div className="flex flex-col items-center gap-2">
-              <svg className="h-12 w-12 text-canvas-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-              </svg>
-              <span className="text-lg font-medium text-white">
-                {isProcessingPdf ? 'Processing PDF...' : 'Upload Existing Slides (PDF)'}
-              </span>
-              <span className="text-sm text-canvas-500">Optional - or start with a blank presentation</span>
-            </div>
-          </button>
-        ) : (
-          <div className="rounded-lg border border-green-500/30 bg-green-500/10 px-8 py-4 text-center">
-            <div className="flex items-center gap-3">
-              <svg className="h-6 w-6 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-              </svg>
-              <span className="text-lg font-medium text-green-400">
-                {uploadedPdfSlides.length} slides loaded
-              </span>
-            </div>
-            <button
-              onClick={() => {
-                setUploadedPdfSlides(null);
-                if (fileInputRef.current) fileInputRef.current.value = '';
-              }}
-              className="mt-2 text-sm text-canvas-400 underline hover:text-canvas-300"
-            >
-              Upload different PDF
-            </button>
-          </div>
-        )}
-      </div>
-
       <button
-        onClick={() => onStart(uploadedPdfSlides || undefined)}
+        onClick={onStart}
         className="rounded-full bg-coral-500 px-12 py-4 text-lg font-semibold text-white shadow-coral-lg transition-all duration-200 hover:scale-105 hover:bg-coral-600 hover:shadow-coral-lg active:scale-[0.98]"
       >
         Start Presenting
@@ -375,7 +301,7 @@ function SplashScreen({ onStart }: { onStart: (pdfSlides?: SlideData[]) => void 
 }
 
 // Main presenter view with controls
-function PresenterView({ onExit, initialSlides }: { onExit: () => void; initialSlides?: SlideData[] }) {
+function PresenterView({ onExit }: { onExit: () => void }) {
   const {
     isConnected,
     isRecording,
@@ -401,18 +327,38 @@ function PresenterView({ onExit, initialSlides }: { onExit: () => void; initialS
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [audienceUrl, setAudienceUrl] = useState<string | null>(null);
   const [creatingSession, setCreatingSession] = useState(false);
+  const [isProcessingPdf, setIsProcessingPdf] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { feedback, unreadCount, dismissFeedback } = useFeedback(sessionId);
 
   const currentSlide = slideNav.index >= 0 ? slideNav.history[slideNav.index] : null;
 
-  // Add initial PDF slides to the queue when component mounts
-  useEffect(() => {
-    if (initialSlides && initialSlides.length > 0) {
-      addSlides(initialSlides);
-      console.log(`✅ Added ${initialSlides.length} PDF slides to queue`);
+  // Handle PDF upload
+  const handlePdfUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file || file.type !== 'application/pdf') {
+      alert('Please upload a PDF file');
+      return;
     }
-  }, [initialSlides, addSlides]);
+
+    setIsProcessingPdf(true);
+    try {
+      const { convertPdfToSlides } = await import('@/utils/pdfToImages');
+      const slides = await convertPdfToSlides(file);
+      addSlides(slides);
+      console.log(`✅ Converted and added ${slides.length} PDF pages to slide queue`);
+    } catch (error) {
+      console.error('❌ Failed to process PDF:', error);
+      alert('Failed to process PDF. Please try again.');
+    } finally {
+      setIsProcessingPdf(false);
+      // Reset the file input so the same file can be uploaded again if needed
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
 
   // Separate pending slides by source
   const voiceSlides = pendingSlides.filter((s) => s.source === "voice");
@@ -533,6 +479,15 @@ function PresenterView({ onExit, initialSlides }: { onExit: () => void; initialS
 
   return (
     <div className="flex min-h-screen flex-col bg-canvas-950">
+      {/* Hidden file input for PDF upload */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="application/pdf"
+        onChange={handlePdfUpload}
+        className="hidden"
+      />
+
       {/* Header */}
       <header className="flex flex-col gap-3 border-b border-canvas-800 px-6 py-3">
         <div className="flex items-center justify-between">
@@ -559,10 +514,22 @@ function PresenterView({ onExit, initialSlides }: { onExit: () => void; initialS
                   Generating...
                 </span>
               )}
+              {isProcessingPdf && (
+                <span className="animate-pulse-slow rounded-full border border-blue-500/30 bg-blue-500/15 px-3 py-1.5 text-sm font-medium text-blue-400">
+                  Processing PDF...
+                </span>
+              )}
             </div>
           </div>
 
           <div className="flex items-center gap-3">
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isProcessingPdf}
+              className="rounded-lg border border-canvas-700 bg-canvas-800 px-4 py-2 text-sm font-medium text-canvas-100 transition-all duration-200 hover:border-canvas-600 hover:bg-canvas-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Upload Existing Slides
+            </button>
             <button
               onClick={openPresentationWindow}
               disabled={!sessionId}
@@ -785,16 +752,10 @@ function MicIcon({ className }: { className?: string }) {
 
 export default function Home() {
   const [started, setStarted] = useState(false);
-  const [pdfSlides, setPdfSlides] = useState<SlideData[] | undefined>(undefined);
-
-  const handleStart = (slides?: SlideData[]) => {
-    setPdfSlides(slides);
-    setStarted(true);
-  };
 
   if (!started) {
-    return <SplashScreen onStart={handleStart} />;
+    return <SplashScreen onStart={() => setStarted(true)} />;
   }
 
-  return <PresenterView onExit={() => setStarted(false)} initialSlides={pdfSlides} />;
+  return <PresenterView onExit={() => setStarted(false)} />;
 }
