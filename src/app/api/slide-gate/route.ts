@@ -5,8 +5,6 @@ import {
 } from "@google/generative-ai";
 import { NextRequest, NextResponse } from "next/server";
 
-const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY || "");
-
 // Tool definition for creating a slide
 const createSlideTool = {
   name: "create_slide",
@@ -61,7 +59,6 @@ const CONCLUSION_PATTERNS = [
   /in\s+summary/i,
   /wrapping\s+up/i,
   /to\s+conclude/i,
-  /finally/i,
   /that('s|s)\s+(all|it)\s+for\s+(today|now|this)/i,
   /thank\s+you\s+(all\s+)?for\s+(listening|watching|your\s+time|attending)/i,
   /any\s+questions/i,
@@ -73,6 +70,14 @@ function detectsConclusionIntent(text: string): boolean {
 
 export async function POST(request: NextRequest) {
   try {
+    const apiKey = process.env.GOOGLE_API_KEY;
+    if (!apiKey) {
+      return NextResponse.json(
+        { error: "Missing GOOGLE_API_KEY environment variable" },
+        { status: 500 }
+      );
+    }
+    const genAI = new GoogleGenerativeAI(apiKey);
     const { transcript, priorIdeas = [], acceptedSlides = [], isFirstSlide = false } = await request.json() as {
       transcript: string;
       priorIdeas?: PriorIdea[];

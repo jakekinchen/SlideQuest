@@ -1,8 +1,6 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { NextRequest, NextResponse } from "next/server";
 
-const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY || "");
-
 interface SlideHistoryEntry {
   headline: string;
   visualDescription: string;
@@ -19,6 +17,14 @@ interface QuestionGateResponse {
 
 export async function POST(request: NextRequest) {
   try {
+    const apiKey = process.env.GOOGLE_API_KEY;
+    if (!apiKey) {
+      return NextResponse.json(
+        { error: "Missing GOOGLE_API_KEY environment variable" },
+        { status: 500 }
+      );
+    }
+    const genAI = new GoogleGenerativeAI(apiKey);
     const body = await request.json();
     const {
       question,
@@ -133,4 +139,3 @@ Respond with a single JSON object:
     );
   }
 }
-

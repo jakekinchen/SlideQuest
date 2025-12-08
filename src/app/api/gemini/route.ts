@@ -1,8 +1,6 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { NextRequest, NextResponse } from "next/server";
 
-const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY || "");
-
 interface SlideContent {
   headline: string;
   subheadline?: string;
@@ -21,6 +19,14 @@ interface StyleReference {
 
 export async function POST(request: NextRequest) {
   try {
+    const apiKey = process.env.GOOGLE_API_KEY;
+    if (!apiKey) {
+      return NextResponse.json(
+        { error: "Missing GOOGLE_API_KEY environment variable" },
+        { status: 500 }
+      );
+    }
+    const genAI = new GoogleGenerativeAI(apiKey);
     const body = await request.json();
 
     // Support both old format (title/content/category) and new format (slideContent)
@@ -94,7 +100,6 @@ ${styleContext}
 The image should be a professional, modern presentation slide. It should include the title and visual elements that explain the content.
 Resolution: 1024x576 pixels (16:9 aspect ratio).`;
     }
-    console.log("Prompt:", prompt);
     const result = await model.generateContent(prompt);
     const response = result.response;
 

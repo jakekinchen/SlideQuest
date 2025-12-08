@@ -1,8 +1,6 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { NextRequest, NextResponse } from "next/server";
 
-const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY || "");
-
 export interface ExtractedSlide {
   id: string;
   imageUrl: string; // The original uploaded image
@@ -22,6 +20,14 @@ export interface ExtractedSlide {
 
 export async function POST(request: NextRequest) {
   try {
+    const apiKey = process.env.GOOGLE_API_KEY;
+    if (!apiKey) {
+      return NextResponse.json(
+        { error: "Missing GOOGLE_API_KEY environment variable" },
+        { status: 500 }
+      );
+    }
+    const genAI = new GoogleGenerativeAI(apiKey);
     const body = await request.json();
     const { images } = body as { images: { dataUrl: string; fileName: string }[] };
 
