@@ -100,9 +100,9 @@ async function pdfToImages(pdfPath: string, outputDir: string): Promise<string[]
 
     const files = await readdir(outputDir);
     return files
-      .filter(f => f.startsWith("slide") && f.endsWith(".png"))
-      .sort()
-      .map(f => join(outputDir, f));
+      .filter((f) => f.startsWith("slide") && f.endsWith(".png"))
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }))
+      .map((f) => join(outputDir, f));
   } catch {
     // pdftoppm not available - try with ImageMagick
     try {
@@ -110,9 +110,9 @@ async function pdfToImages(pdfPath: string, outputDir: string): Promise<string[]
 
       const files = await readdir(outputDir);
       return files
-        .filter(f => f.startsWith("slide") && f.endsWith(".png"))
-        .sort()
-        .map(f => join(outputDir, f));
+        .filter((f) => f.startsWith("slide") && f.endsWith(".png"))
+        .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }))
+        .map((f) => join(outputDir, f));
     } catch {
       throw new Error("No PDF to image converter available (install poppler-utils or imagemagick)");
     }
