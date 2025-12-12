@@ -2,6 +2,8 @@
 
 Slidequest is a Next.js app that turns live speech, uploaded decks, and audience questions into AI-generated slides in real time.
 
+Live demo: https://slidequest.vercel.app
+
 It uses:
 - Deepgram for live transcription
 - Gemini for image and text generation

@@ -425,7 +425,7 @@ export function useRealtimeAPI() {
                   latestPrompt?.prompt ||
                   "A visual that extends the conversation using recent slides and audience signals",
                 category:
-                  acceptedSlides[acceptedSlides.length - 1]?.category ||
+                  acceptedSlides[acceptedSlides.length - 1]?.originalIdea?.category ||
                   "concept",
               },
             ];
