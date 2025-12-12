@@ -133,7 +133,6 @@ Focus on extracting the text content accurately and describing the visual layout
       while (true) {
         const index = currentIndex++;
         if (index >= images.length) break;
-        // eslint-disable-next-line no-await-in-loop
         await processImage(index);
       }
     }

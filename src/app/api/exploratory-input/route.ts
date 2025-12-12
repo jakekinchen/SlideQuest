@@ -1,4 +1,7 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import {
+  DynamicRetrievalMode,
+  GoogleGenerativeAI,
+} from "@google/generative-ai";
 import { NextRequest, NextResponse } from "next/server";
 
 interface ExploratorySlide {
@@ -55,6 +58,15 @@ export async function POST(request: NextRequest) {
       generationConfig: {
         responseMimeType: "application/json",
       },
+      tools: [
+        {
+          googleSearchRetrieval: {
+            dynamicRetrievalConfig: {
+              mode: DynamicRetrievalMode.MODE_DYNAMIC,
+            },
+          },
+        },
+      ],
     });
 
     const slideContext = currentSlide
